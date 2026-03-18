@@ -17,14 +17,14 @@ try {
 
     validateInput(input);
 
-    const { hubspotApiKey, datasetId, companyId, dataMappings } = input;
+    const { hubspotAccessToken, datasetId, companyId, dataMappings } = input;
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
 
     log.info(`Starting import to HubSpot company ${companyId}`);
 
-    log.info('Step 1: Verifying HubSpot API key and company...');
-    await verifyCompany(hubspotApiKey, companyId);
+    log.info('Step 1: Verifying HubSpot access token and company...');
+    await verifyCompany(hubspotAccessToken, companyId);
     log.info(`Verified company ${companyId} exists`);
 
     log.info('Step 2: Fetching first dataset item...');
@@ -50,7 +50,7 @@ try {
     log.info(`Mapped ${Object.keys(properties).length} properties: ${Object.keys(properties).join(', ')}`);
 
     log.info('Step 4: Updating company in HubSpot...');
-    await updateCompany(hubspotApiKey, companyId, properties);
+    await updateCompany(hubspotAccessToken, companyId, properties);
     log.info('Company updated successfully');
 
     const endTime = new Date();

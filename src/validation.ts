@@ -5,8 +5,11 @@ import type { ActorInput } from './types.js';
  * Throws descriptive errors if any required fields are missing or invalid.
  */
 export const validateInput = (input: ActorInput): void => {
-    if (!input.hubspotApiKey) {
-        throw new Error('Missing required input "hubspotApiKey". Please provide your HubSpot private app API key.');
+    if (!input.hubspotAccessToken) {
+        throw new Error(
+            'Missing required input "hubspotAccessToken". Please provide your HubSpot access token '
+            + '(private app token or OAuth access token).',
+        );
     }
     if (!input.datasetId) {
         throw new Error('Missing required input "datasetId". Please select an Apify dataset to import from.');

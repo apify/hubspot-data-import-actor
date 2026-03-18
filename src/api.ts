@@ -49,7 +49,7 @@ export const fetchWithRetry = async (url: string, options: RequestInit, maxRetri
 };
 
 /**
- * Verifies the HubSpot API key is valid and the company exists.
+ * Verifies the HubSpot access token is valid and the company exists.
  * Makes a GET request to fetch the company by ID.
  */
 export const verifyCompany = async (apiKey: string, companyId: string): Promise<void> => {
@@ -62,7 +62,7 @@ export const verifyCompany = async (apiKey: string, companyId: string): Promise<
         const errorText = await response.text();
         throw new Error(
             `Failed to verify company "${companyId}" (${response.status} ${response.statusText}): ${errorText}. `
-            + 'Please check your HubSpot API key and company ID.',
+            + 'Please check your HubSpot access token and company ID.',
         );
     }
 

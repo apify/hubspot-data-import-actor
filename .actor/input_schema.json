@@ -3,9 +3,9 @@
     "type": "object",
     "schemaVersion": 1,
     "properties": {
-        "hubspotApiKey": {
-            "title": "HubSpot API key",
-            "description": "Your HubSpot private app API key. Found in HubSpot Settings > Integrations > Private Apps.",
+        "hubspotAccessToken": {
+            "title": "HubSpot access token",
+            "description": "Your HubSpot access token. Works with both private app tokens (from Settings > Integrations > Private Apps) and OAuth access tokens.",
             "type": "string",
             "editor": "textfield",
             "isSecret": true
@@ -48,5 +48,5 @@
             }
         }
     },
-    "required": ["hubspotApiKey", "datasetId", "companyId", "dataMappings"]
+    "required": ["hubspotAccessToken", "datasetId", "companyId", "dataMappings"]
 }

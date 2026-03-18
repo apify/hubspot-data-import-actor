@@ -4,7 +4,7 @@ export interface DataMapping {
 }
 
 export interface ActorInput {
-    hubspotApiKey: string;
+    hubspotAccessToken: string;
     datasetId: string;
     companyId: string;
     dataMappings: DataMapping[];
