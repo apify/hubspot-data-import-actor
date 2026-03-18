@@ -1,0 +1,52 @@
+{
+    "title": "Import Apify dataset to HubSpot company",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "hubspotApiKey": {
+            "title": "HubSpot API key",
+            "description": "Your HubSpot private app API key. Found in HubSpot Settings > Integrations > Private Apps.",
+            "type": "string",
+            "editor": "textfield",
+            "isSecret": true
+        },
+        "datasetId": {
+            "title": "Dataset",
+            "type": "string",
+            "description": "Select the Apify dataset containing enrichment data.",
+            "resourceType": "dataset"
+        },
+        "companyId": {
+            "title": "HubSpot company ID",
+            "description": "The HubSpot company ID to update with data from the dataset.",
+            "type": "string",
+            "editor": "textfield"
+        },
+        "dataMappings": {
+            "title": "Field mappings",
+            "description": "Map dataset fields to HubSpot company properties. 'source' uses dot notation (e.g. 'metadata.industry'), 'target' is the internal HubSpot property name (e.g. 'industry').",
+            "type": "array",
+            "editor": "schemaBased",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "title": "Source field",
+                        "description": "Dot-notation path in the dataset item (e.g. 'revenue' or 'metadata.industry').",
+                        "editor": "textfield"
+                    },
+                    "target": {
+                        "type": "string",
+                        "title": "HubSpot property",
+                        "description": "Internal name of an existing HubSpot company property (e.g. 'annualrevenue', 'industry').",
+                        "editor": "textfield"
+                    }
+                },
+                "required": ["source", "target"],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": ["hubspotApiKey", "datasetId", "companyId", "dataMappings"]
+}
