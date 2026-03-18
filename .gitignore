@@ -1,0 +1,11 @@
+.idea
+.vscode
+.zed
+storage
+apify_storage
+crawlee_storage
+node_modules
+dist
+tsconfig.tsbuildinfo
+.claude
+airtable-data-import-actor
