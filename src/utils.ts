@@ -5,7 +5,7 @@ import type { DataMapping } from './types.js';
  */
 export const getValueAtPath = (obj: any, path: string): any => {
     return path.split('.').reduce((acc, key) => {
-        if (acc == null) return undefined;
+        if (acc == null || typeof acc !== 'object') return undefined;
         return acc[key];
     }, obj);
 };

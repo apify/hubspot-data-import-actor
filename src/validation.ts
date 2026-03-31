@@ -1,30 +1,27 @@
-import type { ActorInput } from './types.js';
+import { z } from 'zod';
+
+const nonEmptyString = z.string().trim().min(1);
+
+const DataMappingSchema = z.object({
+    source: nonEmptyString,
+    target: nonEmptyString,
+});
+
+export const ActorInputSchema = z.object({
+    hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
+    datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
+    companyId: nonEmptyString.describe('HubSpot company ID to update'),
+    dataMappings: z
+        .array(DataMappingSchema)
+        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),
+});
+
+export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;
 
 /**
- * Validates the actor input configuration.
+ * Validates the actor input configuration using Zod.
  * Throws descriptive errors if any required fields are missing or invalid.
  */
-export const validateInput = (input: ActorInput): void => {
-    if (!input.hubspotAccessToken) {
-        throw new Error(
-            'Missing required input "hubspotAccessToken". Please provide your HubSpot access token '
-            + '(private app token or OAuth access token).',
-        );
-    }
-    if (!input.datasetId) {
-        throw new Error('Missing required input "datasetId". Please select an Apify dataset to import from.');
-    }
-    if (!input.companyId || !input.companyId.trim()) {
-        throw new Error('Missing required input "companyId". Please provide a HubSpot company ID to update.');
-    }
-
-    const cleanedMappings = input.dataMappings?.filter(
-        (m) => m.source?.trim() && m.target?.trim(),
-    );
-    if (!Array.isArray(cleanedMappings) || cleanedMappings.length === 0) {
-        throw new Error(
-            'Input "dataMappings" must be a non-empty array with at least one valid mapping. '
-            + 'Each mapping must have non-empty "source" and "target" fields.',
-        );
-    }
+export const validateInput = (input: unknown): ValidatedActorInput => {
+    return ActorInputSchema.parse(input);
 };

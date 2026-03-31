@@ -20,25 +20,14 @@ export const fetchWithRetry = async (url: string, options: RequestInit, maxRetri
                 return response;
             }
 
-            // Retry on rate limit (429) or server errors (5xx)
-            if (response.status === 429 || response.status >= 500) {
-                if (attempt < maxRetries) {
-                    const delay = Math.pow(2, attempt) * 1000;
-                    log.warning(
-                        `Request failed with ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`,
-                    );
-                    await sleep(delay);
-                    continue;
-                }
-            }
-
-            return response;
+            // Throw on retryable status codes (429, 5xx) so retry is handled once in catch
+            throw new Error(`Request failed with status ${response.status}`);
         } catch (error: any) {
             lastError = error;
             if (attempt < maxRetries) {
                 const delay = Math.pow(2, attempt) * 1000;
                 log.warning(
-                    `Network error: ${error.message}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`,
+                    `${error.message}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})...`,
                 );
                 await sleep(delay);
             }
