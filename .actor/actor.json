@@ -2,7 +2,7 @@
     "actorSpecification": 1,
     "name": "hubspot-data-import-actor",
     "title": "HubSpot Company Data Import",
-    "description": "Import data from an Apify dataset into a HubSpot company record with flexible field mapping.",
+    "description": "Import data from an Apify dataset into multiple HubSpot company records, matching dataset items to companies via URL.",
     "version": "0.0",
     "buildTag": "latest",
     "meta": {
@@ -19,10 +19,11 @@
                     "title": "Import Overview",
                     "transformation": {
                         "fields": [
-                            "success",
                             "companyId",
+                            "companyUrl",
+                            "success",
                             "propertiesUpdated",
-                            "duration"
+                            "error"
                         ]
                     },
                     "display": {

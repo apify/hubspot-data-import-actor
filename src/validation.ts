@@ -10,7 +10,9 @@ const DataMappingSchema = z.object({
 export const ActorInputSchema = z.object({
     hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
     datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
-    companyId: nonEmptyString.describe('HubSpot company ID to update'),
+    companyUrlMapping: z
+        .array(z.object({ url: nonEmptyString, companyId: nonEmptyString }))
+        .min(1, 'Must have at least one company URL to HubSpot ID mapping'),
     dataMappings: z
         .array(DataMappingSchema)
         .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),

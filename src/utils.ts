@@ -26,3 +26,33 @@ export const mapItemToProperties = (item: Record<string, any>, dataMappings: Dat
 
     return properties;
 };
+
+/**
+ * Normalizes a URL for comparison by stripping protocol, www prefix, and trailing slashes.
+ */
+export const normalizeUrl = (url: string): string => {
+    let normalized = url.trim().toLowerCase();
+    normalized = normalized.replace(/^https?:\/\//, '');
+    normalized = normalized.replace(/^www\./, '');
+    normalized = normalized.replace(/\/+$/, '');
+    return normalized;
+};
+
+/**
+ * Builds a lookup map from dataset items keyed by normalized `originalStartUrl`.
+ * Each URL maps to a single dataset item (lead enrichment produces one item per URL).
+ */
+export const buildItemsByUrl = (items: Record<string, any>[]): Map<string, Record<string, any>> => {
+    const map = new Map<string, Record<string, any>>();
+
+    for (const item of items) {
+        const url = item.originalStartUrl;
+        if (typeof url !== 'string' || !url) continue;
+        const key = normalizeUrl(url);
+        if (!map.has(key)) {
+            map.set(key, item);
+        }
+    }
+
+    return map;
+};

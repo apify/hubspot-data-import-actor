@@ -3,18 +3,33 @@ export interface DataMapping {
     target: string;
 }
 
+export interface CompanyUrlMapping {
+    url: string;
+    companyId: string;
+}
+
 export interface ActorInput {
     hubspotAccessToken: string;
     datasetId: string;
-    companyId: string;
+    companyUrlMapping: CompanyUrlMapping[];
     dataMappings: DataMapping[];
 }
 
-export interface ActorOutput {
-    success: boolean;
+export interface CompanyResult {
     companyId: string;
-    datasetId: string;
+    companyUrl: string;
+    success: boolean;
     propertiesUpdated: number;
+    error?: string;
+}
+
+export interface ActorOutput {
+    totalCompanies: number;
+    successCount: number;
+    failureCount: number;
+    unmatchedCompanies: string[];
+    results: CompanyResult[];
+    datasetId: string;
     startTime: string;
     endTime: string;
     duration: number;

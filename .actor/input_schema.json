@@ -1,5 +1,5 @@
 {
-    "title": "Import Apify dataset to HubSpot company",
+    "title": "Import Apify dataset to HubSpot companies",
     "type": "object",
     "schemaVersion": 1,
     "properties": {
@@ -16,11 +16,30 @@
             "description": "Select the Apify dataset containing enrichment data.",
             "resourceType": "dataset"
         },
-        "companyId": {
-            "title": "HubSpot company ID",
-            "description": "The HubSpot company ID to update with data from the dataset.",
-            "type": "string",
-            "editor": "textfield"
+        "companyUrlMapping": {
+            "title": "Company URL to HubSpot ID mapping",
+            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched to companies via the 'originalStartUrl' field.",
+            "type": "array",
+            "editor": "schemaBased",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "title": "Company URL",
+                        "description": "The company website URL (e.g. 'https://example.com').",
+                        "editor": "textfield"
+                    },
+                    "companyId": {
+                        "type": "string",
+                        "title": "HubSpot company ID",
+                        "description": "The HubSpot company ID to update with matched data.",
+                        "editor": "textfield"
+                    }
+                },
+                "required": ["url", "companyId"],
+                "additionalProperties": false
+            }
         },
         "dataMappings": {
             "title": "Field mappings",
@@ -48,5 +67,5 @@
             }
         }
     },
-    "required": ["hubspotAccessToken", "datasetId", "companyId", "dataMappings"]
+    "required": ["hubspotAccessToken", "datasetId", "companyUrlMapping", "dataMappings"]
 }
