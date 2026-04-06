@@ -4,7 +4,7 @@ export interface DataMapping {
 }
 
 export interface CompanyUrlMapping {
-    url: string;
+    url?: string;
     companyId: string;
 }
 
@@ -18,14 +18,17 @@ export interface ActorInput {
 export interface CompanyResult {
     companyId: string;
     companyUrl: string;
+    status: 'imported' | 'skipped' | 'failed';
     success: boolean;
     propertiesUpdated: number;
     error?: string;
+    skipReason?: string;
 }
 
 export interface ActorOutput {
     totalCompanies: number;
     successCount: number;
+    skippedCount: number;
     failureCount: number;
     unmatchedCompanies: string[];
     results: CompanyResult[];

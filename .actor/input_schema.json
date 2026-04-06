@@ -37,7 +37,7 @@
                         "editor": "textfield"
                     }
                 },
-                "required": ["url", "companyId"],
+                "required": ["companyId"],
                 "additionalProperties": false
             }
         },

@@ -42,13 +42,19 @@ try {
     const unmatchedCompanies: string[] = [];
 
     for (const { url: companyUrl, companyId } of companyUrlMapping) {
+        if (!companyUrl?.trim()) {
+            log.info(`Skipping company ${companyId}: no company URL provided`);
+            results.push({ companyId, companyUrl: '', status: 'skipped', success: false, propertiesUpdated: 0, skipReason: 'No company URL provided' });
+            continue;
+        }
+
         const normalizedCompanyUrl = normalizeUrl(companyUrl);
         const matchingItem = itemsByUrl.get(normalizedCompanyUrl);
 
         if (!matchingItem) {
             log.warning(`No dataset item found for company ${companyId} (URL: ${companyUrl})`);
             unmatchedCompanies.push(companyUrl);
-            results.push({ companyId, companyUrl, success: false, propertiesUpdated: 0, error: 'No matching dataset item found' });
+            results.push({ companyId, companyUrl, status: 'failed', success: false, propertiesUpdated: 0, error: 'No matching dataset item found' });
             continue;
         }
 
@@ -57,7 +63,7 @@ try {
 
             if (Object.keys(properties).length === 0) {
                 log.warning(`No properties mapped for company ${companyId} (URL: ${companyUrl})`);
-                results.push({ companyId, companyUrl, success: false, propertiesUpdated: 0, error: 'No properties could be mapped from the dataset item' });
+                results.push({ companyId, companyUrl, status: 'failed', success: false, propertiesUpdated: 0, error: 'No properties could be mapped from the dataset item' });
                 continue;
             }
 
@@ -65,23 +71,25 @@ try {
             await updateCompany(hubspotAccessToken, companyId, properties);
 
             log.info(`Successfully updated company ${companyId}`);
-            results.push({ companyId, companyUrl, success: true, propertiesUpdated: Object.keys(properties).length });
+            results.push({ companyId, companyUrl, status: 'imported', success: true, propertiesUpdated: Object.keys(properties).length });
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : String(err);
             log.error(`Failed to update company ${companyId}: ${errorMessage}`);
-            results.push({ companyId, companyUrl, success: false, propertiesUpdated: 0, error: errorMessage });
+            results.push({ companyId, companyUrl, status: 'failed', success: false, propertiesUpdated: 0, error: errorMessage });
         }
     }
 
     const endTime = new Date();
     const duration = (endTime.getTime() - startTime.getTime()) / 1000;
 
-    const successCount = results.filter((r) => r.success).length;
-    const failureCount = results.filter((r) => !r.success).length;
+    const successCount = results.filter((r) => r.status === 'imported').length;
+    const skippedCount = results.filter((r) => r.status === 'skipped').length;
+    const failureCount = results.filter((r) => r.status === 'failed').length;
 
     const output: ActorOutput = {
         totalCompanies: companyUrlMapping.length,
         successCount,
+        skippedCount,
         failureCount,
         unmatchedCompanies,
         results,
