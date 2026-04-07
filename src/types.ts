@@ -25,3 +25,15 @@ export interface CompanyResult {
     skipReason?: string;
 }
 
+export interface ActorOutput {
+    totalCompanies: number;
+    successCount: number;
+    skippedCount: number;
+    failureCount: number;
+    unmatchedCompanies: string[];
+    results: CompanyResult[];
+    datasetId: string;
+    startTime: string;
+    endTime: string;
+    duration: number;
+}
