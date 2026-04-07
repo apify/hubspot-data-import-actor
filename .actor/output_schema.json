@@ -1,13 +1,6 @@
 {
     "actorOutputSchemaVersion": 1,
     "title": "HubSpot Import Results",
-    "description": "Output from the HubSpot company data import operation",
-    "properties": {
-        "importSummary": {
-            "title": "Import Summary",
-            "type": "string",
-            "description": "Detailed summary of the import operation including statistics, timing, and metadata",
-            "template": "{{links.apiDefaultDatasetUrl}}/items"
-        }
-    }
+    "description": "Per-company results from the HubSpot data import operation",
+    "properties": {}
 }

@@ -1,5 +1,5 @@
 import { Actor, log } from 'apify';
-import type { ActorInput, ActorOutput, CompanyResult } from './types.js';
+import type { ActorInput, CompanyResult } from './types.js';
 import { validateInput } from './validation.js';
 import { mapItemToProperties, normalizeUrl, buildItemsByUrl } from './utils.js';
 import { updateCompany } from './api.js';
@@ -86,20 +86,23 @@ try {
     const skippedCount = results.filter((r) => r.status === 'skipped').length;
     const failureCount = results.filter((r) => r.status === 'failed').length;
 
-    const output: ActorOutput = {
+    // Push each company result as its own row so users can see each one in the dataset viewer
+    const companyRows = results.map((r) => ({
+        companyId: r.companyId,
+        companyUrl: r.companyUrl,
+        status: r.status,
+        success: r.success,
+        propertiesUpdated: r.propertiesUpdated,
+        ...(r.error ? { error: r.error } : {}),
+        ...(r.skipReason ? { skipReason: r.skipReason } : {}),
         totalCompanies: companyUrlMapping.length,
         successCount,
         skippedCount,
         failureCount,
-        unmatchedCompanies,
-        results,
         datasetId,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        duration,
-    };
+    }));
 
-    await Actor.pushData(output);
+    await Actor.pushData(companyRows);
 
     log.info('Import complete!', {
         totalCompanies: companyUrlMapping.length,
