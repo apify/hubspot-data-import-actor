@@ -1,13 +1,16 @@
 import { Client } from '@hubspot/api-client';
 
+export const createHubspotClient = (accessToken: string): Client => {
+    return new Client({ accessToken });
+};
+
 /**
  * Updates a HubSpot company with the provided properties.
  */
 export const updateCompany = async (
-    accessToken: string,
+    client: Client,
     companyId: string,
     properties: Record<string, string>,
 ): Promise<void> => {
-    const client = new Client({ accessToken });
     await client.crm.companies.basicApi.update(companyId, { properties });
 };

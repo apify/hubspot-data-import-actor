@@ -1,12 +1,14 @@
 import type { DataMapping } from './types.js';
 
+type DatasetItem = Record<string, unknown>;
+
 /**
  * Retrieves a value from a nested object using dot notation path (e.g., "user.profile.name")
  */
-export const getValueAtPath = (obj: any, path: string): any => {
-    return path.split('.').reduce((acc, key) => {
+export const getValueAtPath = (obj: DatasetItem, path: string): unknown => {
+    return path.split('.').reduce<unknown>((acc, key) => {
         if (acc == null || typeof acc !== 'object') return undefined;
-        return acc[key];
+        return (acc as DatasetItem)[key];
     }, obj);
 };
 
@@ -14,7 +16,7 @@ export const getValueAtPath = (obj: any, path: string): any => {
  * Maps a single dataset item to HubSpot company properties using the provided field mappings.
  * All values are converted to strings since HubSpot handles type coercion internally.
  */
-export const mapItemToProperties = (item: Record<string, any>, dataMappings: DataMapping[]): Record<string, string> => {
+export const mapItemToProperties = (item: DatasetItem, dataMappings: DataMapping[]): Record<string, string> => {
     const properties: Record<string, string> = {};
 
     for (const mapping of dataMappings) {
@@ -42,8 +44,8 @@ export const normalizeUrl = (url: string): string => {
  * Builds a lookup map from dataset items keyed by normalized `originalStartUrl`.
  * Each URL maps to a single dataset item (lead enrichment produces one item per URL).
  */
-export const buildItemsByUrl = (items: Record<string, any>[]): Map<string, Record<string, any>> => {
-    const map = new Map<string, Record<string, any>>();
+export const buildItemsByUrl = (items: DatasetItem[]): Map<string, DatasetItem> => {
+    const map = new Map<string, DatasetItem>();
 
     for (const item of items) {
         const url = item.originalStartUrl;

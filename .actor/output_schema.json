@@ -2,5 +2,71 @@
     "actorOutputSchemaVersion": 1,
     "title": "HubSpot Import Results",
     "description": "Output from the HubSpot company data import operation",
-    "properties": {}
+    "properties": {
+        "totalCompanies": {
+            "type": "integer",
+            "title": "Total Companies",
+            "description": "Total number of companies in the input mapping"
+        },
+        "successCount": {
+            "type": "integer",
+            "title": "Success Count",
+            "description": "Number of companies successfully imported"
+        },
+        "skippedCount": {
+            "type": "integer",
+            "title": "Skipped Count",
+            "description": "Number of companies skipped (e.g. missing URL)"
+        },
+        "failureCount": {
+            "type": "integer",
+            "title": "Failure Count",
+            "description": "Number of companies that failed to import"
+        },
+        "unmatchedCompanies": {
+            "type": "array",
+            "title": "Unmatched Companies",
+            "description": "URLs of companies that had no matching dataset item",
+            "items": {
+                "type": "string"
+            }
+        },
+        "results": {
+            "type": "array",
+            "title": "Results",
+            "description": "Per-company import results",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "companyId": { "type": "string" },
+                    "companyUrl": { "type": "string" },
+                    "status": { "type": "string", "enum": ["imported", "skipped", "failed"] },
+                    "success": { "type": "boolean" },
+                    "propertiesUpdated": { "type": "integer" },
+                    "error": { "type": "string" },
+                    "skipReason": { "type": "string" }
+                }
+            }
+        },
+        "datasetId": {
+            "type": "string",
+            "title": "Dataset ID",
+            "description": "The Apify dataset ID that was imported from"
+        },
+        "startTime": {
+            "type": "string",
+            "title": "Start Time",
+            "description": "ISO 8601 timestamp of when the import started"
+        },
+        "endTime": {
+            "type": "string",
+            "title": "End Time",
+            "description": "ISO 8601 timestamp of when the import finished"
+        },
+        "duration": {
+            "type": "number",
+            "title": "Duration",
+            "description": "Total import duration in seconds"
+        }
+    }
 }
