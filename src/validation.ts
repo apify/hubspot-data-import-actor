@@ -25,5 +25,9 @@ export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;
  * Throws descriptive errors if any required fields are missing or invalid.
  */
 export const validateInput = (input: unknown): ValidatedActorInput => {
+    if (!input) {
+        throw new Error('No input provided');
+    }
+
     return ActorInputSchema.parse(input);
 };

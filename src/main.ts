@@ -1,5 +1,5 @@
 import { Actor, log } from 'apify';
-import type { ActorInput, ActorOutput, CompanyResult } from './types.js';
+import type { ActorOutput, CompanyResult } from './types.js';
 import { validateInput } from './validation.js';
 import { mapItemToProperties, normalizeUrl } from './utils.js';
 import { createHubspotClient, updateCompany } from './api.js';
@@ -16,15 +16,8 @@ await Actor.init();
 const startTime = new Date();
 
 try {
-    const input = (await Actor.getInput()) as ActorInput | null;
-
-    if (!input) {
-        throw new Error('No input provided');
-    }
-
-    validateInput(input);
-
-    const { hubspotAccessToken, datasetId, companyUrlMapping, dataMappings } = input;
+    const input = await Actor.getInput();
+    const { hubspotAccessToken, datasetId, companyUrlMapping, dataMappings } = validateInput(input);
 
     const hubspotClient = createHubspotClient(hubspotAccessToken);
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
