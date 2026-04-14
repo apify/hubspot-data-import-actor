@@ -140,7 +140,8 @@ try {
         duration,
     };
 
-    await Actor.pushData(output);
+    await Actor.pushData(results);
+    await Actor.setValue('OUTPUT', output);
 
     // Clean up migration state on successful completion
     await store.setValue(STATE_KEY, null);
