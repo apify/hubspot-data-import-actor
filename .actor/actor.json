@@ -9,6 +9,9 @@
         "templateId": "js-empty"
     },
     "dockerfile": "../Dockerfile",
+    "defaultRunOptions": {
+        "memoryMbytes": 1024
+    },
     "storages": {
         "dataset": {
             "actorSpecification": 1,
@@ -21,6 +24,7 @@
                         "fields": [
                             "companyId",
                             "companyUrl",
+                            "status",
                             "success",
                             "propertiesUpdated",
                             "error"
