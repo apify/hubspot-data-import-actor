@@ -1,0 +1,38 @@
+{
+    "actorSpecification": 1,
+    "name": "hubspot-data-import-actor",
+    "title": "HubSpot Company Data Import",
+    "description": "Import data from an Apify dataset into multiple HubSpot company records, matching dataset items to companies via URL.",
+    "version": "0.0",
+    "buildTag": "latest",
+    "meta": {
+        "templateId": "js-empty"
+    },
+    "dockerfile": "../Dockerfile",
+    "storages": {
+        "dataset": {
+            "actorSpecification": 1,
+            "title": "Import Summary",
+            "description": "Summary of the HubSpot import operation",
+            "views": {
+                "overview": {
+                    "title": "Import Overview",
+                    "transformation": {
+                        "fields": [
+                            "companyId",
+                            "companyUrl",
+                            "success",
+                            "propertiesUpdated",
+                            "error"
+                        ]
+                    },
+                    "display": {
+                        "component": "table"
+                    }
+                }
+            }
+        }
+    },
+    "input": "./input_schema.json",
+    "output": "./output_schema.json"
+}

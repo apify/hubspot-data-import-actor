@@ -1,0 +1,71 @@
+{
+    "title": "Import Apify dataset to HubSpot companies",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "hubspotAccessToken": {
+            "title": "HubSpot access token",
+            "description": "Your HubSpot access token. Works with both private app tokens (from Settings > Integrations > Private Apps) and OAuth access tokens.",
+            "type": "string",
+            "editor": "textfield",
+            "isSecret": true
+        },
+        "datasetId": {
+            "title": "Dataset",
+            "type": "string",
+            "description": "Select the Apify dataset containing enrichment data.",
+            "resourceType": "dataset"
+        },
+        "companyUrlMapping": {
+            "title": "Company URL to HubSpot ID mapping",
+            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched to companies via the 'originalStartUrl' field. Companies without a URL are skipped and reported in the output.",
+            "type": "array",
+            "editor": "schemaBased",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "title": "Company URL",
+                        "description": "The company website URL (e.g. 'https://example.com').",
+                        "editor": "textfield"
+                    },
+                    "companyId": {
+                        "type": "string",
+                        "title": "HubSpot company ID",
+                        "description": "The HubSpot company ID to update with matched data.",
+                        "editor": "textfield"
+                    }
+                },
+                "required": ["companyId"],
+                "additionalProperties": false
+            }
+        },
+        "dataMappings": {
+            "title": "Field mappings",
+            "description": "Map dataset fields to HubSpot company properties. 'source' uses dot notation (e.g. 'metadata.industry'), 'target' is the internal HubSpot property name (e.g. 'industry').",
+            "type": "array",
+            "editor": "schemaBased",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "title": "Source field",
+                        "description": "Dot-notation path in the dataset item (e.g. 'revenue' or 'metadata.industry').",
+                        "editor": "textfield"
+                    },
+                    "target": {
+                        "type": "string",
+                        "title": "HubSpot property",
+                        "description": "Internal name of an existing HubSpot company property (e.g. 'annualrevenue', 'industry').",
+                        "editor": "textfield"
+                    }
+                },
+                "required": ["source", "target"],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": ["hubspotAccessToken", "datasetId", "companyUrlMapping", "dataMappings"]
+}
