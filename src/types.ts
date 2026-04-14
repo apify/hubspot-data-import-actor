@@ -8,13 +8,6 @@ export interface CompanyUrlMapping {
     companyId: string;
 }
 
-export interface ActorInput {
-    hubspotAccessToken: string;
-    datasetId: string;
-    companyUrlMapping: CompanyUrlMapping[];
-    dataMappings: DataMapping[];
-}
-
 export interface CompanyResult {
     companyId: string;
     companyUrl: string;
