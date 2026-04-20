@@ -4,8 +4,12 @@ import { validateInput, LeadsEnrichmentRowSchema, LEADS_ENRICHMENT_FIELD_KEYS } 
 const validInput = {
     hubspotAccessToken: 'pat-na1-abc123',
     datasetId: 'abc123',
+    importMode: 'contacts' as const,
+    runId: 'run-1',
+    runSecret: 'secret-1',
+    callbackUrl: 'https://backend.example.com/hubspot/config/runs/import-callback',
     companyUrlMapping: [{ url: 'https://example.com', companyId: '123' }],
-    dataMappings: [{ source: 'revenue', target: 'annualrevenue' }],
+    dataMappings: [{ source: 'email', target: 'email' }],
 };
 
 describe('validateInput', () => {
@@ -13,6 +17,10 @@ describe('validateInput', () => {
         const result = validateInput(validInput);
         expect(result.hubspotAccessToken).toBe('pat-na1-abc123');
         expect(result.datasetId).toBe('abc123');
+        expect(result.importMode).toBe('contacts');
+        expect(result.runId).toBe('run-1');
+        expect(result.runSecret).toBe('secret-1');
+        expect(result.callbackUrl).toBe('https://backend.example.com/hubspot/config/runs/import-callback');
     });
 
     it('rejects missing hubspotAccessToken', () => {
@@ -21,6 +29,22 @@ describe('validateInput', () => {
 
     it('rejects missing datasetId', () => {
         expect(() => validateInput({ ...validInput, datasetId: '' })).toThrow();
+    });
+
+    it('rejects importMode other than "contacts"', () => {
+        expect(() => validateInput({ ...validInput, importMode: 'company' })).toThrow();
+    });
+
+    it('rejects missing runId', () => {
+        expect(() => validateInput({ ...validInput, runId: '' })).toThrow();
+    });
+
+    it('rejects missing runSecret', () => {
+        expect(() => validateInput({ ...validInput, runSecret: '' })).toThrow();
+    });
+
+    it('rejects invalid callbackUrl', () => {
+        expect(() => validateInput({ ...validInput, callbackUrl: 'not-a-url' })).toThrow();
     });
 
     it('rejects empty companyUrlMapping', () => {
@@ -36,7 +60,19 @@ describe('validateInput', () => {
     });
 
     it('rejects dataMappings with empty target', () => {
-        expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'x', target: '' }] })).toThrow();
+        expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'email', target: '' }] })).toThrow();
+    });
+
+    it('rejects dataMappings with source not in LEADS_ENRICHMENT_FIELD_KEYS', () => {
+        expect(() =>
+            validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
+        ).toThrow(/is not a valid leadsEnrichment field/);
+    });
+
+    it('accepts every LEADS_ENRICHMENT_FIELD_KEYS value as a source', () => {
+        const mappings = LEADS_ENRICHMENT_FIELD_KEYS.map((k) => ({ source: k, target: `hs_${k}` }));
+        const result = validateInput({ ...validInput, dataMappings: mappings });
+        expect(result.dataMappings).toHaveLength(LEADS_ENRICHMENT_FIELD_KEYS.length);
     });
 
     it('allows companyUrlMapping without url (optional)', () => {

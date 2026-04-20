@@ -8,14 +8,18 @@ export interface CompanyUrlMapping {
     companyId: string;
 }
 
-export interface CompanyResult {
+export interface ContactImportStats {
+    created: number;
+    updated: number;
+    skipped: number;
+    rowsTotal: number;
+    error?: string;
+}
+
+export interface CompanyResult extends ContactImportStats {
     companyId: string;
     companyUrl: string;
     status: 'imported' | 'skipped' | 'failed';
-    success: boolean;
-    propertiesUpdated: number;
-    error?: string;
-    skipReason?: string;
 }
 
 export interface LeadsEnrichmentRow {
@@ -49,9 +53,10 @@ export interface LeadsEnrichmentRow {
 
 export interface ActorOutput {
     totalCompanies: number;
-    successCount: number;
-    skippedCount: number;
-    failureCount: number;
+    totalCreated: number;
+    totalUpdated: number;
+    totalSkipped: number;
+    totalRows: number;
     unmatchedCompanies: string[];
     results: CompanyResult[];
     datasetId: string;

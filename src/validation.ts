@@ -11,6 +11,8 @@ export const LEADS_ENRICHMENT_FIELD_KEYS = [
     'photoUrl', 'twitter',
 ] as const;
 
+const LEADS_ENRICHMENT_FIELD_KEY_SET = new Set<string>(LEADS_ENRICHMENT_FIELD_KEYS);
+
 export const LeadsEnrichmentRowSchema = z.object({
     personId: z.string().nullable().optional(),
     firstName: z.string().nullable().optional(),
@@ -48,12 +50,27 @@ const DataMappingSchema = z.object({
 export const ActorInputSchema = z.object({
     hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
     datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
+    importMode: z.literal('contacts').describe('Import mode — only "contacts" is supported'),
+    runId: nonEmptyString.describe('Backend run ID used to correlate callback reports'),
+    runSecret: nonEmptyString.describe('Shared secret accompanying callback POSTs for authentication'),
+    callbackUrl: z.url().describe('Backend URL to POST per-company import stats to'),
     companyUrlMapping: z
         .array(z.object({ url: z.string().optional(), companyId: nonEmptyString }))
         .min(1, 'Must have at least one company to HubSpot ID mapping'),
     dataMappings: z
         .array(DataMappingSchema)
-        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),
+        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields')
+        .superRefine((mappings, ctx) => {
+            mappings.forEach((m, i) => {
+                if (!LEADS_ENRICHMENT_FIELD_KEY_SET.has(m.source)) {
+                    ctx.addIssue({
+                        code: 'custom',
+                        path: [i, 'source'],
+                        message: `"${m.source}" is not a valid leadsEnrichment field. Allowed: ${LEADS_ENRICHMENT_FIELD_KEYS.join(', ')}`,
+                    });
+                }
+            });
+        }),
 });
 
 export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;
