@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateInput } from '../validation.js';
+import { validateInput, LeadsEnrichmentRowSchema, LEADS_ENRICHMENT_FIELD_KEYS } from '../validation.js';
 
 const validInput = {
     hubspotAccessToken: 'pat-na1-abc123',
@@ -54,5 +54,47 @@ describe('validateInput', () => {
         const result = validateInput(input);
         expect(result.hubspotAccessToken).toBe('token');
         expect(result.datasetId).toBe('ds123');
+    });
+});
+
+describe('LeadsEnrichmentRowSchema', () => {
+    it('accepts a fully populated row', () => {
+        const row = {
+            personId: 'p1', firstName: 'Jane', lastName: 'Doe',
+            fullName: 'Jane Doe', linkedinProfile: 'https://linkedin.com/in/janedoe',
+            email: 'jane@example.com', mobileNumber: '+1234567890',
+            jobTitle: 'Engineer', industry: 'Tech', city: 'NYC',
+            state: 'NY', country: 'US', companyId: 'c1',
+            companyName: 'Acme', companyWebsite: 'acme.com',
+            companySize: '50-100', companyLinkedin: 'https://linkedin.com/company/acme',
+            companyCity: 'NYC', companyState: 'NY', companyCountry: 'US',
+            companyPhoneNumber: '+1234567890', headline: 'Software Engineer',
+            departments: ['Engineering'], seniority: 'Senior',
+            photoUrl: 'https://example.com/photo.jpg', twitter: '@janedoe',
+        };
+        expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+    });
+
+    it('accepts a row with all null fields', () => {
+        const row = Object.fromEntries(
+            LEADS_ENRICHMENT_FIELD_KEYS.map((k) => [k, null]),
+        );
+        expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+    });
+
+    it('accepts an empty row (all fields optional)', () => {
+        expect(() => LeadsEnrichmentRowSchema.parse({})).not.toThrow();
+    });
+
+    it('covers all expected field keys', () => {
+        const expectedFields = [
+            'personId', 'firstName', 'lastName', 'fullName', 'linkedinProfile',
+            'email', 'mobileNumber', 'jobTitle', 'industry', 'city', 'state',
+            'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
+            'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
+            'companyPhoneNumber', 'headline', 'departments', 'seniority',
+            'photoUrl', 'twitter',
+        ];
+        expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
     });
 });
