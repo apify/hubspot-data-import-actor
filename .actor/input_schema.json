@@ -87,6 +87,14 @@
                         "title": "HubSpot property",
                         "description": "Internal name of an existing HubSpot contact property (e.g. 'email', 'firstname').",
                         "editor": "textfield"
+                    },
+                    "overwriteMode": {
+                        "type": "string",
+                        "title": "When already set",
+                        "description": "'overwrite' replaces the existing HubSpot value; 'skip' leaves the existing value untouched when it is non-empty. Defaults to 'overwrite' if omitted.",
+                        "editor": "select",
+                        "enum": ["overwrite", "skip"],
+                        "default": "overwrite"
                     }
                 },
                 "required": ["source", "target"],
