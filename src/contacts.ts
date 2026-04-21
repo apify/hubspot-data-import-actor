@@ -2,6 +2,7 @@ import { log } from 'apify';
 import type { ContactImportStats, DataMapping, LeadsEnrichmentRow } from './types.js';
 import { mapItemToProperties } from './utils.js';
 import {
+    HubspotAuthError,
     associateContactToCompany,
     createContact,
     searchContactByEmail,
@@ -47,6 +48,7 @@ export const processCompanyLeads = async (
                 stats.created++;
             }
         } catch (err) {
+            if (err instanceof HubspotAuthError) throw err;
             const message = err instanceof Error ? err.message : String(err);
             log.warning(`Contact write failed for ${email} (company ${companyId}): ${message}`);
             stats.skipped++;
@@ -57,6 +59,7 @@ export const processCompanyLeads = async (
         try {
             await associateContactToCompany(token, contactId, companyId);
         } catch (err) {
+            if (err instanceof HubspotAuthError) throw err;
             const message = err instanceof Error ? err.message : String(err);
             log.warning(`Association failed for contact ${contactId} → company ${companyId}: ${message}`);
             recordError(message);

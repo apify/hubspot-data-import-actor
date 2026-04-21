@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { processCompanyLeads } from '../contacts.js';
+import { HubspotAuthError } from '../api.js';
 import type { DataMapping, LeadsEnrichmentRow } from '../types.js';
 
 const DEFAULT_MAPPINGS: DataMapping[] = [
@@ -126,6 +127,26 @@ describe('processCompanyLeads', () => {
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
         expect(stats).toMatchObject({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
         expect(stats.error).toContain('500');
+    });
+
+    it('propagates 401 from search as HubspotAuthError (does not count as skipped)', async () => {
+        setupFetch([
+            () => ({ status: 401, body: { message: 'invalid token' } }),
+        ]);
+        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
+        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS))
+            .rejects.toBeInstanceOf(HubspotAuthError);
+    });
+
+    it('propagates 401 from association as HubspotAuthError', async () => {
+        setupFetch([
+            () => ({ body: { results: [] } }),
+            () => ({ body: { id: 'c-new' } }),
+            () => ({ status: 401, body: { message: 'invalid token' } }),
+        ]);
+        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
+        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS))
+            .rejects.toBeInstanceOf(HubspotAuthError);
     });
 
     it('processes a mix of skip/create/update rows', async () => {

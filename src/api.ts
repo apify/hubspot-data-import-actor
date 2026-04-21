@@ -11,6 +11,13 @@ export class HubspotApiError extends Error {
     }
 }
 
+export class HubspotAuthError extends Error {
+    constructor(path: string, body: string) {
+        super(`HubSpot authentication rejected (401 on ${path}): ${body}`);
+        this.name = 'HubspotAuthError';
+    }
+}
+
 interface HubspotFetchOptions {
     method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
     body?: unknown;
@@ -38,6 +45,7 @@ const hubspotFetch = async <T>(
     const data = text ? (JSON.parse(text) as T) : null;
 
     if (!response.ok) {
+        if (response.status === 401) throw new HubspotAuthError(path, text);
         throw new HubspotApiError(response.status, text, path);
     }
 

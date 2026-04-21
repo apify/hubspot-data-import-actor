@@ -4,6 +4,12 @@ import { validateInput } from './validation.js';
 import { normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
 import { postImportCallback } from './callback.js';
+import {
+    assertDatasetHasLeads,
+    assertSomeCompaniesMatch,
+    assertSomeWritesSucceeded,
+    deriveCompanyStatus,
+} from './failStates.js';
 
 const STATE_KEY = 'MIGRATION_STATE';
 
@@ -91,6 +97,9 @@ try {
 
     log.info(`Fetched ${totalItems} items from dataset, mapped ${leadsByUrl.size} unique URLs`);
 
+    assertDatasetHasLeads(datasetId, totalItems, leadsByUrl);
+    assertSomeCompaniesMatch(companyUrlMapping, leadsByUrl);
+
     const unmatchedCompanies: string[] = [];
 
     for (let i = startIndex; i < companyUrlMapping.length; i++) {
@@ -120,7 +129,7 @@ try {
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
                     stats = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings);
-                    status = stats.error ? 'failed' : 'imported';
+                    status = deriveCompanyStatus(stats);
                 }
             }
         }
@@ -139,6 +148,9 @@ try {
     const totalUpdated = results.reduce((sum, r) => sum + r.updated, 0);
     const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
     const totalRows = results.reduce((sum, r) => sum + r.rowsTotal, 0);
+
+    const anyCompanyHadError = results.some((r) => r.error != null);
+    assertSomeWritesSucceeded({ totalCreated, totalUpdated, anyCompanyHadError });
 
     const output: ActorOutput = {
         totalCompanies: companyUrlMapping.length,
