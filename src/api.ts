@@ -71,6 +71,21 @@ export const searchContactByEmail = async (
     return data?.results?.[0]?.id ?? null;
 };
 
+export const searchContactByPhone = async (
+    token: string,
+    phone: string,
+): Promise<string | null> => {
+    const { data } = await hubspotFetch<ContactSearchResponse>(token, '/crm/v3/objects/contacts/search', {
+        method: 'POST',
+        body: {
+            filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: phone }] }],
+            limit: 1,
+            properties: ['phone'],
+        },
+    });
+    return data?.results?.[0]?.id ?? null;
+};
+
 interface ContactMutationResponse {
     id: string;
 }

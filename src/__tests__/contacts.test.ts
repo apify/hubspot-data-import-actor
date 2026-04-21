@@ -51,7 +51,7 @@ describe('processCompanyLeads', () => {
     it('skips leads without an email and does not call HubSpot', async () => {
         const { calls } = setupFetch([]);
         const leads: LeadsEnrichmentRow[] = [{ firstName: 'No', lastName: 'Email' }];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
         expect(calls).toHaveLength(0);
     });
@@ -65,7 +65,7 @@ describe('processCompanyLeads', () => {
         const leads: LeadsEnrichmentRow[] = [
             { email: 'jane@example.com', firstName: 'Jane', lastName: 'Doe' },
         ];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
         expect(calls[0].url).toContain('/contacts/search');
         expect(calls[1].url).toMatch(/\/crm\/v3\/objects\/contacts$/);
@@ -86,7 +86,7 @@ describe('processCompanyLeads', () => {
         const leads: LeadsEnrichmentRow[] = [
             { email: 'jane@example.com', firstName: 'Jane', mobileNumber: '+1' },
         ];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
         expect(calls[1].method).toBe('PATCH');
         expect(calls[1].url).toMatch(/\/contacts\/contact-123$/);
@@ -102,7 +102,7 @@ describe('processCompanyLeads', () => {
             () => ({ status: 409, body: { message: 'already associated' } }),
         ]);
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
     });
 
@@ -113,7 +113,7 @@ describe('processCompanyLeads', () => {
             () => ({ status: 500, body: { message: 'boom' } }),
         ]);
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats.created).toBe(1);
         expect(stats.skipped).toBe(0);
         expect(stats.error).toContain('500');
@@ -124,7 +124,7 @@ describe('processCompanyLeads', () => {
             () => ({ status: 500, body: { message: 'server down' } }),
         ]);
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toMatchObject({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
         expect(stats.error).toContain('500');
     });
@@ -134,7 +134,7 @@ describe('processCompanyLeads', () => {
             () => ({ status: 401, body: { message: 'invalid token' } }),
         ]);
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS))
+        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
             .rejects.toBeInstanceOf(HubspotAuthError);
     });
 
@@ -145,7 +145,7 @@ describe('processCompanyLeads', () => {
             () => ({ status: 401, body: { message: 'invalid token' } }),
         ]);
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS))
+        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
             .rejects.toBeInstanceOf(HubspotAuthError);
     });
 
@@ -166,7 +166,57 @@ describe('processCompanyLeads', () => {
             { firstName: 'NoEmail' },
             { email: 'c@d.com', firstName: 'C' },
         ];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS);
+        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 1, updated: 1, skipped: 1, rowsTotal: 3 });
+    });
+
+    describe('phone deduplication', () => {
+        it('skips leads without a mobileNumber when dedup is phone', async () => {
+            const { calls } = setupFetch([]);
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'has@email.com', firstName: 'NoPhone' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(calls).toHaveLength(0);
+        });
+
+        it('searches by phone and creates when no match', async () => {
+            const { calls } = setupFetch([
+                () => ({ body: { results: [] } }),
+                () => ({ body: { id: 'c-phone-new' } }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { mobileNumber: '+15551234567', firstName: 'Jane' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(calls[0].url).toContain('/contacts/search');
+            expect(calls[0].body).toEqual({
+                filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: '+15551234567' }] }],
+                limit: 1,
+                properties: ['phone'],
+            });
+            expect(calls[1].body).toEqual({
+                properties: { phone: '+15551234567', firstname: 'Jane' },
+            });
+            expect(calls[2].url).toContain('/contacts/c-phone-new/associations/companies/c1/contact_to_company');
+        });
+
+        it('searches by phone and updates on match', async () => {
+            const { calls } = setupFetch([
+                () => ({ body: { results: [{ id: 'c-phone-existing' }] } }),
+                () => ({ status: 204 }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { mobileNumber: '+15551234567', firstName: 'Jane' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+            expect(calls[1].method).toBe('PATCH');
+            expect(calls[1].url).toMatch(/\/contacts\/c-phone-existing$/);
+        });
     });
 });

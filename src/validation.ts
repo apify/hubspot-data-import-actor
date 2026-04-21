@@ -71,6 +71,7 @@ export const ActorInputSchema = z.object({
                 }
             });
         }),
+    deduplication: z.enum(['email', 'phone']).default('email'),
 });
 
 export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;

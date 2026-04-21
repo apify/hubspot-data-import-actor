@@ -40,6 +40,7 @@ try {
         runId,
         runSecret,
         callbackUrl,
+        deduplication,
     } = validateInput(input);
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
@@ -128,7 +129,7 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    stats = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings);
+                    stats = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication);
                     status = deriveCompanyStatus(stats);
                 }
             }

@@ -92,6 +92,14 @@
                 "required": ["source", "target"],
                 "additionalProperties": false
             }
+        },
+        "deduplication": {
+            "title": "Deduplication key",
+            "description": "Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped.",
+            "type": "string",
+            "editor": "select",
+            "enum": ["email", "phone"],
+            "default": "email"
         }
     },
     "required": [
@@ -102,6 +110,7 @@
         "runSecret",
         "callbackUrl",
         "companyUrlMapping",
-        "dataMappings"
+        "dataMappings",
+        "deduplication"
     ]
 }

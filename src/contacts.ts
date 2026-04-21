@@ -6,14 +6,18 @@ import {
     associateContactToCompany,
     createContact,
     searchContactByEmail,
+    searchContactByPhone,
     updateContact,
 } from './api.js';
+
+export type DeduplicationKey = 'email' | 'phone';
 
 export const processCompanyLeads = async (
     token: string,
     companyId: string,
     leadsEnrichment: LeadsEnrichmentRow[],
     dataMappings: DataMapping[],
+    deduplication: DeduplicationKey,
 ): Promise<ContactImportStats> => {
     const stats: ContactImportStats = {
         created: 0,
@@ -27,18 +31,23 @@ export const processCompanyLeads = async (
     };
 
     for (const lead of leadsEnrichment) {
-        const email = lead.email?.trim();
-        if (!email) {
+        // Dedup source on the lead: email → lead.email; phone → lead.mobileNumber.
+        // HubSpot's contact property is `phone` in both cases, but the scraper emits it as mobileNumber.
+        const dedupValue = (deduplication === 'email' ? lead.email : lead.mobileNumber)?.trim();
+        if (!dedupValue) {
             stats.skipped++;
             continue;
         }
 
         const properties = mapItemToProperties(lead as Record<string, unknown>, dataMappings);
-        if (!properties.email) properties.email = email;
+        if (deduplication === 'email' && !properties.email) properties.email = dedupValue;
+        if (deduplication === 'phone' && !properties.phone) properties.phone = dedupValue;
 
         let contactId: string;
         try {
-            const existingId = await searchContactByEmail(token, email);
+            const existingId = deduplication === 'email'
+                ? await searchContactByEmail(token, dedupValue)
+                : await searchContactByPhone(token, dedupValue);
             if (existingId) {
                 await updateContact(token, existingId, properties);
                 contactId = existingId;
@@ -50,7 +59,7 @@ export const processCompanyLeads = async (
         } catch (err) {
             if (err instanceof HubspotAuthError) throw err;
             const message = err instanceof Error ? err.message : String(err);
-            log.warning(`Contact write failed for ${email} (company ${companyId}): ${message}`);
+            log.warning(`Contact write failed for ${dedupValue} (company ${companyId}): ${message}`);
             stats.skipped++;
             recordError(message);
             continue;
