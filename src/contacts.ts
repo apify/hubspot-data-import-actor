@@ -1,6 +1,6 @@
 import { log } from 'apify';
 import type { ContactImportStats, DataMapping, LeadsEnrichmentRow } from './types.js';
-import { mapItemToProperties } from './utils.js';
+import { filterSkippedProperties, mapItemToProperties } from './utils.js';
 import {
     HubspotAuthError,
     associateContactToCompany,
@@ -30,6 +30,10 @@ export const processCompanyLeads = async (
         if (!stats.error) stats.error = message;
     };
 
+    const skipTargets = dataMappings
+        .filter((m) => m.overwriteMode === 'skip')
+        .map((m) => m.target);
+
     for (const lead of leadsEnrichment) {
         // Dedup source on the lead: email → lead.email; phone → lead.mobileNumber.
         // HubSpot's contact property is `phone` in both cases, but the scraper emits it as mobileNumber.
@@ -45,13 +49,20 @@ export const processCompanyLeads = async (
 
         let contactId: string;
         try {
-            const existingId = deduplication === 'email'
-                ? await searchContactByEmail(token, dedupValue)
-                : await searchContactByPhone(token, dedupValue);
-            if (existingId) {
-                await updateContact(token, existingId, properties);
-                contactId = existingId;
-                stats.updated++;
+            const existing = deduplication === 'email'
+                ? await searchContactByEmail(token, dedupValue, skipTargets)
+                : await searchContactByPhone(token, dedupValue, skipTargets);
+            if (existing) {
+                const filtered = filterSkippedProperties(properties, existing.properties, skipTargets);
+                if (Object.keys(filtered).length === 0) {
+                    log.info(`Contact ${existing.id}: all mapped fields already populated, skipping update`);
+                    stats.skipped++;
+                    contactId = existing.id;
+                } else {
+                    await updateContact(token, existing.id, filtered);
+                    contactId = existing.id;
+                    stats.updated++;
+                }
             } else {
                 contactId = await createContact(token, properties);
                 stats.created++;

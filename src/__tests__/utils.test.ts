@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getValueAtPath, mapItemToProperties, normalizeUrl, buildItemsByUrl } from '../utils.js';
+import { filterSkippedProperties, getValueAtPath, mapItemToProperties, normalizeUrl, buildItemsByUrl } from '../utils.js';
 
 describe('getValueAtPath', () => {
     it('returns top-level value', () => {
@@ -66,6 +66,64 @@ describe('mapItemToProperties', () => {
         const item = { x: 1 };
         const mappings = [{ source: 'missing', target: 'prop' }];
         expect(mapItemToProperties(item, mappings)).toEqual({});
+    });
+});
+
+describe('filterSkippedProperties', () => {
+    it('returns input unchanged when skipTargets is empty', () => {
+        const props = { firstname: 'Jane', email: 'j@x.com' };
+        expect(filterSkippedProperties(props, { firstname: 'Old' }, [])).toEqual(props);
+    });
+
+    it('drops a key when existing has a non-empty string for it', () => {
+        const out = filterSkippedProperties(
+            { firstname: 'Jane', jobtitle: 'CEO' },
+            { firstname: 'Old', jobtitle: 'CTO' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ firstname: 'Jane' });
+    });
+
+    it('keeps a key when existing value is empty string', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO' },
+            { jobtitle: '' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('keeps a key when existing value is whitespace only', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO' },
+            { jobtitle: '   ' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('keeps a key when existing value is null or missing', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO', industry: 'Tech' },
+            { jobtitle: null },
+            ['jobtitle', 'industry'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO', industry: 'Tech' });
+    });
+
+    it('only removes listed skipTargets', () => {
+        const out = filterSkippedProperties(
+            { firstname: 'Jane', jobtitle: 'CEO' },
+            { firstname: 'Old', jobtitle: 'CTO' },
+            ['firstname'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('does not mutate the input properties', () => {
+        const props = { jobtitle: 'CEO' };
+        filterSkippedProperties(props, { jobtitle: 'CTO' }, ['jobtitle']);
+        expect(props).toEqual({ jobtitle: 'CEO' });
     });
 });
 

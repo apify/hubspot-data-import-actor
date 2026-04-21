@@ -1,6 +1,9 @@
+export type OverwriteMode = 'overwrite' | 'skip';
+
 export interface DataMapping {
     source: string;
     target: string;
+    overwriteMode: OverwriteMode;
 }
 
 export interface CompanyUrlMapping {

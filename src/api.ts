@@ -53,37 +53,53 @@ const hubspotFetch = async <T>(
 };
 
 interface ContactSearchResponse {
-    results?: Array<{ id: string }>;
+    results?: Array<{ id: string; properties?: Record<string, unknown> }>;
 }
+
+export interface ContactSearchHit {
+    id: string;
+    properties: Record<string, unknown>;
+}
+
+const uniqueProperties = (dedupField: 'email' | 'phone', extra: string[]): string[] => {
+    const set = new Set<string>([dedupField, ...extra]);
+    return Array.from(set);
+};
 
 export const searchContactByEmail = async (
     token: string,
     email: string,
-): Promise<string | null> => {
+    extraProperties: string[] = [],
+): Promise<ContactSearchHit | null> => {
     const { data } = await hubspotFetch<ContactSearchResponse>(token, '/crm/v3/objects/contacts/search', {
         method: 'POST',
         body: {
             filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
             limit: 1,
-            properties: ['email'],
+            properties: uniqueProperties('email', extraProperties),
         },
     });
-    return data?.results?.[0]?.id ?? null;
+    const hit = data?.results?.[0];
+    if (!hit?.id) return null;
+    return { id: hit.id, properties: hit.properties ?? {} };
 };
 
 export const searchContactByPhone = async (
     token: string,
     phone: string,
-): Promise<string | null> => {
+    extraProperties: string[] = [],
+): Promise<ContactSearchHit | null> => {
     const { data } = await hubspotFetch<ContactSearchResponse>(token, '/crm/v3/objects/contacts/search', {
         method: 'POST',
         body: {
             filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: phone }] }],
             limit: 1,
-            properties: ['phone'],
+            properties: uniqueProperties('phone', extraProperties),
         },
     });
-    return data?.results?.[0]?.id ?? null;
+    const hit = data?.results?.[0];
+    if (!hit?.id) return null;
+    return { id: hit.id, properties: hit.properties ?? {} };
 };
 
 interface ContactMutationResponse {

@@ -4,11 +4,11 @@ import { HubspotAuthError } from '../api.js';
 import type { DataMapping, LeadsEnrichmentRow } from '../types.js';
 
 const DEFAULT_MAPPINGS: DataMapping[] = [
-    { source: 'email', target: 'email' },
-    { source: 'firstName', target: 'firstname' },
-    { source: 'lastName', target: 'lastname' },
-    { source: 'jobTitle', target: 'jobtitle' },
-    { source: 'mobileNumber', target: 'phone' },
+    { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+    { source: 'firstName', target: 'firstname', overwriteMode: 'overwrite' },
+    { source: 'lastName', target: 'lastname', overwriteMode: 'overwrite' },
+    { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'overwrite' },
+    { source: 'mobileNumber', target: 'phone', overwriteMode: 'overwrite' },
 ];
 
 interface FakeResponseInit {
@@ -168,6 +168,106 @@ describe('processCompanyLeads', () => {
         ];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 1, updated: 1, skipped: 1, rowsTotal: 3 });
+    });
+
+    describe('per-mapping overwrite/skip', () => {
+        it('omits a skipped field when the existing contact has a non-empty value for it', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+                { source: 'firstName', target: 'firstname', overwriteMode: 'overwrite' },
+                { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
+            ];
+            const { calls } = setupFetch([
+                () => ({
+                    body: {
+                        results: [{
+                            id: 'c-123',
+                            properties: { email: 'a@b.com', jobtitle: 'Existing Title' },
+                        }],
+                    },
+                }),
+                () => ({ status: 204 }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'Jane', jobTitle: 'New Title' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+            expect(calls[0].body).toMatchObject({
+                properties: expect.arrayContaining(['email', 'jobtitle']),
+            });
+            expect(calls[1].method).toBe('PATCH');
+            expect(calls[1].body).toEqual({
+                properties: { email: 'a@b.com', firstname: 'Jane' },
+            });
+        });
+
+        it('overwrites a skipped field when the existing contact is empty for it', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+                { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
+            ];
+            setupFetch([
+                () => ({
+                    body: {
+                        results: [{ id: 'c-123', properties: { email: 'a@b.com', jobtitle: '' } }],
+                    },
+                }),
+                () => ({ status: 204 }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', jobTitle: 'New Title' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+        });
+
+        it('still creates a new contact with all fields when no match is found, regardless of skip flags', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+                { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
+            ];
+            const { calls } = setupFetch([
+                () => ({ body: { results: [] } }),
+                () => ({ body: { id: 'c-new' } }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', jobTitle: 'New Title' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(calls[1].body).toEqual({
+                properties: { email: 'a@b.com', jobtitle: 'New Title' },
+            });
+        });
+
+        it('counts row as skipped and makes no update call when every field is preserved', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'skip' },
+                { source: 'firstName', target: 'firstname', overwriteMode: 'skip' },
+            ];
+            const { calls } = setupFetch([
+                () => ({
+                    body: {
+                        results: [{
+                            id: 'c-123',
+                            properties: { email: 'a@b.com', firstname: 'Existing' },
+                        }],
+                    },
+                }),
+                () => ({ status: 204 }),
+            ]);
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'Jane' },
+            ];
+            const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(calls).toHaveLength(2); // search + associate; no PATCH
+            expect(calls[1].url).toContain('/associations/companies/c1/');
+        });
     });
 
     describe('phone deduplication', () => {

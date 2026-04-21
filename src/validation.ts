@@ -45,6 +45,7 @@ export const LeadsEnrichmentRowSchema = z.object({
 const DataMappingSchema = z.object({
     source: nonEmptyString,
     target: nonEmptyString,
+    overwriteMode: z.enum(['overwrite', 'skip']).default('overwrite'),
 });
 
 export const ActorInputSchema = z.object({
