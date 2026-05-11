@@ -52,9 +52,6 @@ export const ActorInputSchema = z.object({
     hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
     datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
     importMode: z.literal('contacts').describe('Import mode — only "contacts" is supported'),
-    runId: nonEmptyString.describe('Backend run ID used to correlate callback reports'),
-    runSecret: nonEmptyString.describe('Shared secret accompanying callback POSTs for authentication'),
-    callbackUrl: z.url().describe('Backend URL to POST per-company import stats to'),
     companyUrlMapping: z
         .array(z.object({ url: z.string().optional(), companyId: nonEmptyString }))
         .min(1, 'Must have at least one company to HubSpot ID mapping'),

@@ -5,9 +5,6 @@ const validInput = {
     hubspotAccessToken: 'pat-na1-abc123',
     datasetId: 'abc123',
     importMode: 'contacts' as const,
-    runId: 'run-1',
-    runSecret: 'secret-1',
-    callbackUrl: 'https://backend.example.com/hubspot/config/runs/import-callback',
     companyUrlMapping: [{ url: 'https://example.com', companyId: '123' }],
     dataMappings: [{ source: 'email', target: 'email' }],
 };
@@ -18,9 +15,6 @@ describe('validateInput', () => {
         expect(result.hubspotAccessToken).toBe('pat-na1-abc123');
         expect(result.datasetId).toBe('abc123');
         expect(result.importMode).toBe('contacts');
-        expect(result.runId).toBe('run-1');
-        expect(result.runSecret).toBe('secret-1');
-        expect(result.callbackUrl).toBe('https://backend.example.com/hubspot/config/runs/import-callback');
     });
 
     it('rejects missing hubspotAccessToken', () => {
@@ -33,18 +27,6 @@ describe('validateInput', () => {
 
     it('rejects importMode other than "contacts"', () => {
         expect(() => validateInput({ ...validInput, importMode: 'company' })).toThrow();
-    });
-
-    it('rejects missing runId', () => {
-        expect(() => validateInput({ ...validInput, runId: '' })).toThrow();
-    });
-
-    it('rejects missing runSecret', () => {
-        expect(() => validateInput({ ...validInput, runSecret: '' })).toThrow();
-    });
-
-    it('rejects invalid callbackUrl', () => {
-        expect(() => validateInput({ ...validInput, callbackUrl: 'not-a-url' })).toThrow();
     });
 
     it('rejects empty companyUrlMapping', () => {

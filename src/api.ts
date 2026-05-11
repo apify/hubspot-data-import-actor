@@ -1,4 +1,4 @@
-const HUBSPOT_BASE_URL = 'https://api.hubapi.com';
+import { Client } from '@hubspot/api-client';
 
 export class HubspotApiError extends Error {
     constructor(
@@ -18,43 +18,29 @@ export class HubspotAuthError extends Error {
     }
 }
 
-interface HubspotFetchOptions {
-    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+interface SdkHttpError {
+    code?: number;
     body?: unknown;
+    message?: string;
 }
 
-const hubspotFetch = async <T>(
-    token: string,
-    path: string,
-    { method, body }: HubspotFetchOptions,
-): Promise<{ status: number; data: T | null }> => {
-    const response = await fetch(`${HUBSPOT_BASE_URL}${path}`, {
-        method,
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-
-    if (response.status === 204) {
-        return { status: response.status, data: null };
-    }
-
-    const text = await response.text();
-    const data = text ? (JSON.parse(text) as T) : null;
-
-    if (!response.ok) {
-        if (response.status === 401) throw new HubspotAuthError(path, text);
-        throw new HubspotApiError(response.status, text, path);
-    }
-
-    return { status: response.status, data };
+const errorStatus = (err: unknown): number | undefined => {
+    const e = err as SdkHttpError | undefined;
+    return typeof e?.code === 'number' ? e.code : undefined;
 };
 
-interface ContactSearchResponse {
-    results?: Array<{ id: string; properties?: Record<string, unknown> }>;
-}
+const errorBody = (err: unknown): string => {
+    const e = err as SdkHttpError | undefined;
+    if (e?.body == null) return e?.message ?? '';
+    return typeof e.body === 'string' ? e.body : JSON.stringify(e.body);
+};
+
+const translateError = (err: unknown, path: string): never => {
+    const status = errorStatus(err);
+    const body = errorBody(err);
+    if (status === 401) throw new HubspotAuthError(path, body);
+    throw new HubspotApiError(status ?? 0, body, path);
+};
 
 export interface ContactSearchHit {
     id: string;
@@ -66,22 +52,35 @@ const uniqueProperties = (dedupField: 'email' | 'phone', extra: string[]): strin
     return Array.from(set);
 };
 
+const searchContactBy = async (
+    token: string,
+    field: 'email' | 'phone',
+    value: string,
+    extraProperties: string[],
+): Promise<ContactSearchHit | null> => {
+    const client = new Client({ accessToken: token });
+    try {
+        const response = await client.crm.contacts.searchApi.doSearch({
+            filterGroups: [{ filters: [{ propertyName: field, operator: 'EQ' as never, value }] }],
+            properties: uniqueProperties(field, extraProperties),
+            limit: 1,
+            after: '0',
+            sorts: [],
+        });
+        const hit = response.results?.[0];
+        if (!hit?.id) return null;
+        return { id: hit.id, properties: hit.properties ?? {} };
+    } catch (err) {
+        return translateError(err, '/crm/v3/objects/contacts/search');
+    }
+};
+
 export const searchContactByEmail = async (
     token: string,
     email: string,
     extraProperties: string[] = [],
 ): Promise<ContactSearchHit | null> => {
-    const { data } = await hubspotFetch<ContactSearchResponse>(token, '/crm/v3/objects/contacts/search', {
-        method: 'POST',
-        body: {
-            filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: email }] }],
-            limit: 1,
-            properties: uniqueProperties('email', extraProperties),
-        },
-    });
-    const hit = data?.results?.[0];
-    if (!hit?.id) return null;
-    return { id: hit.id, properties: hit.properties ?? {} };
+    return searchContactBy(token, 'email', email, extraProperties);
 };
 
 export const searchContactByPhone = async (
@@ -89,33 +88,21 @@ export const searchContactByPhone = async (
     phone: string,
     extraProperties: string[] = [],
 ): Promise<ContactSearchHit | null> => {
-    const { data } = await hubspotFetch<ContactSearchResponse>(token, '/crm/v3/objects/contacts/search', {
-        method: 'POST',
-        body: {
-            filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: phone }] }],
-            limit: 1,
-            properties: uniqueProperties('phone', extraProperties),
-        },
-    });
-    const hit = data?.results?.[0];
-    if (!hit?.id) return null;
-    return { id: hit.id, properties: hit.properties ?? {} };
+    return searchContactBy(token, 'phone', phone, extraProperties);
 };
-
-interface ContactMutationResponse {
-    id: string;
-}
 
 export const createContact = async (
     token: string,
     properties: Record<string, string>,
 ): Promise<string> => {
-    const { data } = await hubspotFetch<ContactMutationResponse>(token, '/crm/v3/objects/contacts', {
-        method: 'POST',
-        body: { properties },
-    });
-    if (!data?.id) throw new Error('HubSpot createContact returned no id');
-    return data.id;
+    const client = new Client({ accessToken: token });
+    try {
+        const created = await client.crm.contacts.basicApi.create({ properties, associations: [] });
+        if (!created.id) throw new Error('HubSpot createContact returned no id');
+        return created.id;
+    } catch (err) {
+        return translateError(err, '/crm/v3/objects/contacts');
+    }
 };
 
 export const updateContact = async (
@@ -123,28 +110,36 @@ export const updateContact = async (
     contactId: string,
     properties: Record<string, string>,
 ): Promise<void> => {
-    await hubspotFetch(token, `/crm/v3/objects/contacts/${contactId}`, {
-        method: 'PATCH',
-        body: { properties },
-    });
+    const client = new Client({ accessToken: token });
+    try {
+        await client.crm.contacts.basicApi.update(contactId, { properties });
+    } catch (err) {
+        translateError(err, `/crm/v3/objects/contacts/${contactId}`);
+    }
 };
 
-/**
- * Associates a contact to a company. Treats 2xx and 409 (already associated) as success.
- */
+const CONTACT_TO_COMPANY_ASSOCIATION_TYPE_ID = 1;
+
 export const associateContactToCompany = async (
     token: string,
     contactId: string,
     companyId: string,
 ): Promise<void> => {
+    const client = new Client({ accessToken: token });
+    const path = `/crm/v4/objects/contacts/${contactId}/associations/default/companies/${companyId}`;
     try {
-        await hubspotFetch(
-            token,
-            `/crm/v3/objects/contacts/${contactId}/associations/companies/${companyId}/contact_to_company`,
-            { method: 'PUT' },
+        await client.crm.associations.v4.basicApi.create(
+            'contacts',
+            contactId,
+            'companies',
+            companyId,
+            [{
+                associationCategory: 'HUBSPOT_DEFINED' as never,
+                associationTypeId: CONTACT_TO_COMPANY_ASSOCIATION_TYPE_ID,
+            }],
         );
     } catch (err) {
-        if (err instanceof HubspotApiError && err.status === 409) return;
-        throw err;
+        if (errorStatus(err) === 409) return;
+        translateError(err, path);
     }
 };

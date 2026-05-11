@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { processCompanyLeads } from '../contacts.js';
-import { HubspotAuthError } from '../api.js';
+import { HubspotApiError, HubspotAuthError } from '../api.js';
 import type { DataMapping, LeadsEnrichmentRow } from '../types.js';
+import * as api from '../api.js';
 
 const DEFAULT_MAPPINGS: DataMapping[] = [
     { source: 'email', target: 'email', overwriteMode: 'overwrite' },
@@ -11,107 +12,61 @@ const DEFAULT_MAPPINGS: DataMapping[] = [
     { source: 'mobileNumber', target: 'phone', overwriteMode: 'overwrite' },
 ];
 
-interface FakeResponseInit {
-    status?: number;
-    body?: unknown;
-}
-
-const fakeResponse = ({ status = 200, body }: FakeResponseInit) => ({
-    ok: status >= 200 && status < 300,
-    status,
-    text: async () => (body == null ? '' : JSON.stringify(body)),
-});
-
-type Call = { url: string; method: string; body: unknown };
-
-const setupFetch = (responses: Array<(call: Call) => FakeResponseInit>) => {
-    const calls: Call[] = [];
-    let i = 0;
-    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
-        const body = init.body ? JSON.parse(init.body as string) : undefined;
-        const call: Call = { url, method: init.method as string, body };
-        calls.push(call);
-        const handler = responses[i++] ?? (() => ({ status: 200, body: {} }));
-        return fakeResponse(handler(call));
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    return { calls, fetchMock };
-};
+let searchByEmail: ReturnType<typeof vi.spyOn>;
+let searchByPhone: ReturnType<typeof vi.spyOn>;
+let create: ReturnType<typeof vi.spyOn>;
+let update: ReturnType<typeof vi.spyOn>;
+let associate: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
+    searchByEmail = vi.spyOn(api, 'searchContactByEmail').mockResolvedValue(null);
+    searchByPhone = vi.spyOn(api, 'searchContactByPhone').mockResolvedValue(null);
+    create = vi.spyOn(api, 'createContact').mockResolvedValue('c-new');
+    update = vi.spyOn(api, 'updateContact').mockResolvedValue(undefined);
+    associate = vi.spyOn(api, 'associateContactToCompany').mockResolvedValue(undefined);
 });
 
 afterEach(() => {
-    vi.unstubAllGlobals();
     vi.restoreAllMocks();
 });
 
 describe('processCompanyLeads', () => {
     it('skips leads without an email and does not call HubSpot', async () => {
-        const { calls } = setupFetch([]);
         const leads: LeadsEnrichmentRow[] = [{ firstName: 'No', lastName: 'Email' }];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
-        expect(calls).toHaveLength(0);
+        expect(searchByEmail).not.toHaveBeenCalled();
     });
 
     it('creates a contact when search returns no match, then associates it', async () => {
-        const { calls } = setupFetch([
-            () => ({ body: { results: [] } }),              // search
-            () => ({ body: { id: 'contact-new' } }),        // create
-            () => ({ status: 204 }),                         // associate
-        ]);
+        searchByEmail.mockResolvedValueOnce(null);
+        create.mockResolvedValueOnce('contact-new');
         const leads: LeadsEnrichmentRow[] = [
             { email: 'jane@example.com', firstName: 'Jane', lastName: 'Doe' },
         ];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
-        expect(calls[0].url).toContain('/contacts/search');
-        expect(calls[1].url).toMatch(/\/crm\/v3\/objects\/contacts$/);
-        expect(calls[1].method).toBe('POST');
-        expect(calls[1].body).toEqual({
-            properties: { email: 'jane@example.com', firstname: 'Jane', lastname: 'Doe' },
-        });
-        expect(calls[2].url).toContain('/contacts/contact-new/associations/companies/c1/contact_to_company');
-        expect(calls[2].method).toBe('PUT');
+        expect(create).toHaveBeenCalledWith('tok', { email: 'jane@example.com', firstname: 'Jane', lastname: 'Doe' });
+        expect(associate).toHaveBeenCalledWith('tok', 'contact-new', 'c1');
     });
 
     it('updates an existing contact when search finds a match', async () => {
-        const { calls } = setupFetch([
-            () => ({ body: { results: [{ id: 'contact-123' }] } }),
-            () => ({ status: 204 }),
-            () => ({ status: 204 }),
-        ]);
+        searchByEmail.mockResolvedValueOnce({ id: 'contact-123', properties: {} });
         const leads: LeadsEnrichmentRow[] = [
             { email: 'jane@example.com', firstName: 'Jane', mobileNumber: '+1' },
         ];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
-        expect(calls[1].method).toBe('PATCH');
-        expect(calls[1].url).toMatch(/\/contacts\/contact-123$/);
-        expect(calls[1].body).toEqual({
-            properties: { email: 'jane@example.com', firstname: 'Jane', phone: '+1' },
+        expect(update).toHaveBeenCalledWith('tok', 'contact-123', {
+            email: 'jane@example.com', firstname: 'Jane', phone: '+1',
         });
+        expect(associate).toHaveBeenCalledWith('tok', 'contact-123', 'c1');
     });
 
-    it('treats association 409 as success (already associated)', async () => {
-        setupFetch([
-            () => ({ body: { results: [] } }),
-            () => ({ body: { id: 'c-new' } }),
-            () => ({ status: 409, body: { message: 'already associated' } }),
-        ]);
-        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
-    });
-
-    it('keeps the created count and captures first error when association fails with 500', async () => {
-        setupFetch([
-            () => ({ body: { results: [] } }),
-            () => ({ body: { id: 'c-new' } }),
-            () => ({ status: 500, body: { message: 'boom' } }),
-        ]);
+    it('captures first error when association fails with non-auth error', async () => {
+        searchByEmail.mockResolvedValueOnce(null);
+        create.mockResolvedValueOnce('c-new');
+        associate.mockRejectedValueOnce(new HubspotApiError(500, 'boom', '/assoc'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats.created).toBe(1);
@@ -120,47 +75,34 @@ describe('processCompanyLeads', () => {
     });
 
     it('counts row as skipped and captures error when search fails', async () => {
-        setupFetch([
-            () => ({ status: 500, body: { message: 'server down' } }),
-        ]);
+        searchByEmail.mockRejectedValueOnce(new HubspotApiError(500, 'server down', '/search'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
         const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
         expect(stats).toMatchObject({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
         expect(stats.error).toContain('500');
     });
 
-    it('propagates 401 from search as HubspotAuthError (does not count as skipped)', async () => {
-        setupFetch([
-            () => ({ status: 401, body: { message: 'invalid token' } }),
-        ]);
+    it('propagates HubspotAuthError from search (does not count as skipped)', async () => {
+        searchByEmail.mockRejectedValueOnce(new HubspotAuthError('/search', 'invalid token'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
         await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
             .rejects.toBeInstanceOf(HubspotAuthError);
     });
 
-    it('propagates 401 from association as HubspotAuthError', async () => {
-        setupFetch([
-            () => ({ body: { results: [] } }),
-            () => ({ body: { id: 'c-new' } }),
-            () => ({ status: 401, body: { message: 'invalid token' } }),
-        ]);
+    it('propagates HubspotAuthError from association', async () => {
+        searchByEmail.mockResolvedValueOnce(null);
+        create.mockResolvedValueOnce('c-new');
+        associate.mockRejectedValueOnce(new HubspotAuthError('/assoc', 'invalid token'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
         await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
             .rejects.toBeInstanceOf(HubspotAuthError);
     });
 
     it('processes a mix of skip/create/update rows', async () => {
-        setupFetch([
-            // row 1: email present → search hit → update → associate
-            () => ({ body: { results: [{ id: 'c-1' }] } }),
-            () => ({ status: 204 }),
-            () => ({ status: 204 }),
-            // row 2: no email → skipped (no fetch)
-            // row 3: email present → search miss → create → associate
-            () => ({ body: { results: [] } }),
-            () => ({ body: { id: 'c-3' } }),
-            () => ({ status: 204 }),
-        ]);
+        searchByEmail
+            .mockResolvedValueOnce({ id: 'c-1', properties: {} })
+            .mockResolvedValueOnce(null);
+        create.mockResolvedValueOnce('c-3');
         const leads: LeadsEnrichmentRow[] = [
             { email: 'a@b.com', firstName: 'A' },
             { firstName: 'NoEmail' },
@@ -177,30 +119,17 @@ describe('processCompanyLeads', () => {
                 { source: 'firstName', target: 'firstname', overwriteMode: 'overwrite' },
                 { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
             ];
-            const { calls } = setupFetch([
-                () => ({
-                    body: {
-                        results: [{
-                            id: 'c-123',
-                            properties: { email: 'a@b.com', jobtitle: 'Existing Title' },
-                        }],
-                    },
-                }),
-                () => ({ status: 204 }),
-                () => ({ status: 204 }),
-            ]);
+            searchByEmail.mockResolvedValueOnce({
+                id: 'c-123',
+                properties: { email: 'a@b.com', jobtitle: 'Existing Title' },
+            });
             const leads: LeadsEnrichmentRow[] = [
                 { email: 'a@b.com', firstName: 'Jane', jobTitle: 'New Title' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
             expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
-            expect(calls[0].body).toMatchObject({
-                properties: expect.arrayContaining(['email', 'jobtitle']),
-            });
-            expect(calls[1].method).toBe('PATCH');
-            expect(calls[1].body).toEqual({
-                properties: { email: 'a@b.com', firstname: 'Jane' },
-            });
+            expect(searchByEmail).toHaveBeenCalledWith('tok', 'a@b.com', ['jobtitle']);
+            expect(update).toHaveBeenCalledWith('tok', 'c-123', { email: 'a@b.com', firstname: 'Jane' });
         });
 
         it('overwrites a skipped field when the existing contact is empty for it', async () => {
@@ -208,15 +137,10 @@ describe('processCompanyLeads', () => {
                 { source: 'email', target: 'email', overwriteMode: 'overwrite' },
                 { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
             ];
-            setupFetch([
-                () => ({
-                    body: {
-                        results: [{ id: 'c-123', properties: { email: 'a@b.com', jobtitle: '' } }],
-                    },
-                }),
-                () => ({ status: 204 }),
-                () => ({ status: 204 }),
-            ]);
+            searchByEmail.mockResolvedValueOnce({
+                id: 'c-123',
+                properties: { email: 'a@b.com', jobtitle: '' },
+            });
             const leads: LeadsEnrichmentRow[] = [
                 { email: 'a@b.com', jobTitle: 'New Title' },
             ];
@@ -229,19 +153,14 @@ describe('processCompanyLeads', () => {
                 { source: 'email', target: 'email', overwriteMode: 'overwrite' },
                 { source: 'jobTitle', target: 'jobtitle', overwriteMode: 'skip' },
             ];
-            const { calls } = setupFetch([
-                () => ({ body: { results: [] } }),
-                () => ({ body: { id: 'c-new' } }),
-                () => ({ status: 204 }),
-            ]);
+            searchByEmail.mockResolvedValueOnce(null);
+            create.mockResolvedValueOnce('c-new');
             const leads: LeadsEnrichmentRow[] = [
                 { email: 'a@b.com', jobTitle: 'New Title' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
             expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
-            expect(calls[1].body).toEqual({
-                properties: { email: 'a@b.com', jobtitle: 'New Title' },
-            });
+            expect(create).toHaveBeenCalledWith('tok', { email: 'a@b.com', jobtitle: 'New Title' });
         });
 
         it('counts row as skipped and makes no update call when every field is preserved', async () => {
@@ -249,74 +168,51 @@ describe('processCompanyLeads', () => {
                 { source: 'email', target: 'email', overwriteMode: 'skip' },
                 { source: 'firstName', target: 'firstname', overwriteMode: 'skip' },
             ];
-            const { calls } = setupFetch([
-                () => ({
-                    body: {
-                        results: [{
-                            id: 'c-123',
-                            properties: { email: 'a@b.com', firstname: 'Existing' },
-                        }],
-                    },
-                }),
-                () => ({ status: 204 }),
-            ]);
+            searchByEmail.mockResolvedValueOnce({
+                id: 'c-123',
+                properties: { email: 'a@b.com', firstname: 'Existing' },
+            });
             const leads: LeadsEnrichmentRow[] = [
                 { email: 'a@b.com', firstName: 'Jane' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
             expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
-            expect(calls).toHaveLength(2); // search + associate; no PATCH
-            expect(calls[1].url).toContain('/associations/companies/c1/');
+            expect(update).not.toHaveBeenCalled();
+            expect(associate).toHaveBeenCalledWith('tok', 'c-123', 'c1');
         });
     });
 
     describe('phone deduplication', () => {
         it('skips leads without a mobileNumber when dedup is phone', async () => {
-            const { calls } = setupFetch([]);
             const leads: LeadsEnrichmentRow[] = [
                 { email: 'has@email.com', firstName: 'NoPhone' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
             expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
-            expect(calls).toHaveLength(0);
+            expect(searchByPhone).not.toHaveBeenCalled();
         });
 
         it('searches by phone and creates when no match', async () => {
-            const { calls } = setupFetch([
-                () => ({ body: { results: [] } }),
-                () => ({ body: { id: 'c-phone-new' } }),
-                () => ({ status: 204 }),
-            ]);
+            searchByPhone.mockResolvedValueOnce(null);
+            create.mockResolvedValueOnce('c-phone-new');
             const leads: LeadsEnrichmentRow[] = [
                 { mobileNumber: '+15551234567', firstName: 'Jane' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
             expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
-            expect(calls[0].url).toContain('/contacts/search');
-            expect(calls[0].body).toEqual({
-                filterGroups: [{ filters: [{ propertyName: 'phone', operator: 'EQ', value: '+15551234567' }] }],
-                limit: 1,
-                properties: ['phone'],
-            });
-            expect(calls[1].body).toEqual({
-                properties: { phone: '+15551234567', firstname: 'Jane' },
-            });
-            expect(calls[2].url).toContain('/contacts/c-phone-new/associations/companies/c1/contact_to_company');
+            expect(searchByPhone).toHaveBeenCalledWith('tok', '+15551234567', []);
+            expect(create).toHaveBeenCalledWith('tok', { phone: '+15551234567', firstname: 'Jane' });
+            expect(associate).toHaveBeenCalledWith('tok', 'c-phone-new', 'c1');
         });
 
         it('searches by phone and updates on match', async () => {
-            const { calls } = setupFetch([
-                () => ({ body: { results: [{ id: 'c-phone-existing' }] } }),
-                () => ({ status: 204 }),
-                () => ({ status: 204 }),
-            ]);
+            searchByPhone.mockResolvedValueOnce({ id: 'c-phone-existing', properties: {} });
             const leads: LeadsEnrichmentRow[] = [
                 { mobileNumber: '+15551234567', firstName: 'Jane' },
             ];
             const stats = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
             expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
-            expect(calls[1].method).toBe('PATCH');
-            expect(calls[1].url).toMatch(/\/contacts\/c-phone-existing$/);
+            expect(update).toHaveBeenCalledWith('tok', 'c-phone-existing', expect.any(Object));
         });
     });
 });

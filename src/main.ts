@@ -3,7 +3,6 @@ import type { ActorOutput, CompanyResult, ContactImportStats, LeadsEnrichmentRow
 import { validateInput } from './validation.js';
 import { normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
-import { postImportCallback } from './callback.js';
 import {
     assertDatasetHasLeads,
     assertSomeCompaniesMatch,
@@ -37,9 +36,6 @@ try {
         datasetId,
         companyUrlMapping,
         dataMappings,
-        runId,
-        runSecret,
-        callbackUrl,
         deduplication,
     } = validateInput(input);
 
@@ -80,11 +76,12 @@ try {
             const url = item.originalStartUrl;
             if (typeof url !== 'string' || !url) continue;
             const key = normalizeUrl(url);
-            if (leadsByUrl.has(key)) continue;
             const leads = Array.isArray(item.leadsEnrichment)
                 ? (item.leadsEnrichment as LeadsEnrichmentRow[])
                 : [];
-            leadsByUrl.set(key, leads);
+            const existing = leadsByUrl.get(key);
+            if (existing) existing.push(...leads);
+            else leadsByUrl.set(key, leads);
         }
 
         totalItems += items.length;
@@ -136,8 +133,6 @@ try {
         }
 
         results.push({ companyId, companyUrl: companyUrl ?? '', status, ...stats });
-
-        await postImportCallback(callbackUrl, runId, runSecret, companyId, stats);
 
         startIndex = i + 1;
     }

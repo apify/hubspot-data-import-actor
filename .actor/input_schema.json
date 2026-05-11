@@ -24,25 +24,6 @@
             "enum": ["contacts"],
             "default": "contacts"
         },
-        "runId": {
-            "title": "Backend run ID",
-            "description": "Run identifier used to correlate per-company callback reports with the backend's run record.",
-            "type": "string",
-            "editor": "textfield"
-        },
-        "runSecret": {
-            "title": "Run secret",
-            "description": "Shared secret passed with each callback POST for authentication.",
-            "type": "string",
-            "editor": "textfield",
-            "isSecret": true
-        },
-        "callbackUrl": {
-            "title": "Callback URL",
-            "description": "Backend URL receiving per-company stats via POST.",
-            "type": "string",
-            "editor": "textfield"
-        },
         "companyUrlMapping": {
             "title": "Company URL to HubSpot ID mapping",
             "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field and leads are associated to the matched company.",
@@ -114,9 +95,6 @@
         "hubspotAccessToken",
         "datasetId",
         "importMode",
-        "runId",
-        "runSecret",
-        "callbackUrl",
         "companyUrlMapping",
         "dataMappings",
         "deduplication"
