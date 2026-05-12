@@ -1,5 +1,5 @@
 import { Actor, log } from 'apify';
-import type { ActorOutput, CompanyResult, ContactImportStats, LeadsEnrichmentRow } from './types.js';
+import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
 import { validateInput } from './validation.js';
 import { normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
@@ -105,6 +105,7 @@ try {
 
         let stats: ContactImportStats;
         let status: CompanyResult['status'] = 'imported';
+        let contacts: ContactResult[] = [];
 
         if (!companyUrl?.trim()) {
             log.info(`Skipping company ${companyId}: no company URL provided`);
@@ -126,13 +127,28 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    stats = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication);
+                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication);
+                    stats = processed.stats;
+                    contacts = processed.contacts;
                     status = deriveCompanyStatus(stats);
                 }
             }
         }
 
-        results.push({ companyId, companyUrl: companyUrl ?? '', status, ...stats });
+        const companyRow: CompanyResult = {
+            kind: 'company',
+            companyId,
+            companyUrl: companyUrl ?? '',
+            status,
+            ...stats,
+        };
+        results.push(companyRow);
+
+        // Push the per-contact rows alongside the company-summary row so the dataset
+        // is the literal record of the enrichment. We push per-iteration (rather than
+        // once at the end) so partial progress survives migration; processedIndex
+        // already delimits "everything up to here is in the dataset".
+        await Actor.pushData([...contacts, companyRow]);
 
         startIndex = i + 1;
     }
@@ -162,7 +178,6 @@ try {
         duration,
     };
 
-    await Actor.pushData(results);
     await Actor.setValue('OUTPUT', output);
 
     await store.setValue(STATE_KEY, null);

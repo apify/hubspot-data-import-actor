@@ -20,9 +20,27 @@ export interface ContactImportStats {
 }
 
 export interface CompanyResult extends ContactImportStats {
+    kind: 'company';
     companyId: string;
     companyUrl: string;
     status: 'imported' | 'skipped' | 'failed';
+}
+
+export type ContactStatus =
+    | 'created'
+    | 'updated'
+    | 'skipped_no_identifier'
+    | 'skipped_already_complete'
+    | 'failed';
+
+export interface ContactResult {
+    kind: 'contact';
+    companyId: string;
+    status: ContactStatus;
+    identifier: string;
+    displayName: string;
+    propertiesWritten: string[];
+    errorMessage?: string;
 }
 
 export interface LeadsEnrichmentRow {
