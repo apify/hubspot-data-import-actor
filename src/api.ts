@@ -1,5 +1,15 @@
 import { Client } from '@hubspot/api-client';
 
+const clientCache = new Map<string, Client>();
+const getClient = (token: string): Client => {
+    let client = clientCache.get(token);
+    if (!client) {
+        client = new Client({ accessToken: token });
+        clientCache.set(token, client);
+    }
+    return client;
+};
+
 export class HubspotApiError extends Error {
     constructor(
         public readonly status: number,
@@ -58,7 +68,7 @@ const searchContactBy = async (
     value: string,
     extraProperties: string[],
 ): Promise<ContactSearchHit | null> => {
-    const client = new Client({ accessToken: token });
+    const client = getClient(token);
     try {
         const response = await client.crm.contacts.searchApi.doSearch({
             filterGroups: [{ filters: [{ propertyName: field, operator: 'EQ' as never, value }] }],
@@ -95,7 +105,7 @@ export const createContact = async (
     token: string,
     properties: Record<string, string>,
 ): Promise<string> => {
-    const client = new Client({ accessToken: token });
+    const client = getClient(token);
     try {
         const created = await client.crm.contacts.basicApi.create({ properties, associations: [] });
         if (!created.id) throw new Error('HubSpot createContact returned no id');
@@ -110,7 +120,7 @@ export const updateContact = async (
     contactId: string,
     properties: Record<string, string>,
 ): Promise<void> => {
-    const client = new Client({ accessToken: token });
+    const client = getClient(token);
     try {
         await client.crm.contacts.basicApi.update(contactId, { properties });
     } catch (err) {
@@ -125,7 +135,7 @@ export const associateContactToCompany = async (
     contactId: string,
     companyId: string,
 ): Promise<void> => {
-    const client = new Client({ accessToken: token });
+    const client = getClient(token);
     const path = `/crm/v4/objects/contacts/${contactId}/associations/default/companies/${companyId}`;
     try {
         await client.crm.associations.v4.basicApi.create(
