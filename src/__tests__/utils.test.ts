@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterSkippedProperties, getValueAtPath, mapItemToProperties, normalizeUrl, buildItemsByUrl } from '../utils.js';
+import { filterSkippedProperties, getValueAtPath, mapItemToProperties, normalizeUrl } from '../utils.js';
 
 describe('getValueAtPath', () => {
     it('returns top-level value', () => {
@@ -154,46 +154,5 @@ describe('normalizeUrl', () => {
 
     it('trims whitespace', () => {
         expect(normalizeUrl('  example.com  ')).toBe('example.com');
-    });
-});
-
-describe('buildItemsByUrl', () => {
-    it('builds map from items with originalStartUrl', () => {
-        const items = [
-            { originalStartUrl: 'https://example.com', data: 1 },
-            { originalStartUrl: 'https://other.com', data: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(2);
-        expect(map.get('example.com')).toEqual(items[0]);
-        expect(map.get('other.com')).toEqual(items[1]);
-    });
-
-    it('keeps the first item for duplicate URLs', () => {
-        const items = [
-            { originalStartUrl: 'https://example.com', version: 1 },
-            { originalStartUrl: 'https://example.com', version: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(1);
-        expect(map.get('example.com')).toEqual(items[0]);
-    });
-
-    it('skips items without originalStartUrl', () => {
-        const items = [
-            { otherField: 'no url' },
-            { originalStartUrl: '', data: 1 },
-            { originalStartUrl: 'https://example.com', data: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(1);
-    });
-
-    it('normalizes URLs for matching', () => {
-        const items = [
-            { originalStartUrl: 'https://www.Example.COM/', data: 1 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.get('example.com')).toEqual(items[0]);
     });
 });

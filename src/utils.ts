@@ -66,22 +66,3 @@ export const normalizeUrl = (url: string): string => {
     normalized = normalized.replace(/\/+$/, '');
     return normalized;
 };
-
-/**
- * Builds a lookup map from dataset items keyed by normalized `originalStartUrl`.
- * Each URL maps to a single dataset item (lead enrichment produces one item per URL).
- */
-export const buildItemsByUrl = (items: DatasetItem[]): Map<string, DatasetItem> => {
-    const map = new Map<string, DatasetItem>();
-
-    for (const item of items) {
-        const url = item.originalStartUrl;
-        if (typeof url !== 'string' || !url) continue;
-        const key = normalizeUrl(url);
-        if (!map.has(key)) {
-            map.set(key, item);
-        }
-    }
-
-    return map;
-};
