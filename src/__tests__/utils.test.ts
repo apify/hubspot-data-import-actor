@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getValueAtPath, mapItemToProperties, normalizeUrl, buildItemsByUrl } from '../utils.js';
+import { filterSkippedProperties, getValueAtPath, mapItemToProperties, normalizeUrl } from '../utils.js';
 
 describe('getValueAtPath', () => {
     it('returns top-level value', () => {
@@ -69,6 +69,64 @@ describe('mapItemToProperties', () => {
     });
 });
 
+describe('filterSkippedProperties', () => {
+    it('returns input unchanged when skipTargets is empty', () => {
+        const props = { firstname: 'Jane', email: 'j@x.com' };
+        expect(filterSkippedProperties(props, { firstname: 'Old' }, [])).toEqual(props);
+    });
+
+    it('drops a key when existing has a non-empty string for it', () => {
+        const out = filterSkippedProperties(
+            { firstname: 'Jane', jobtitle: 'CEO' },
+            { firstname: 'Old', jobtitle: 'CTO' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ firstname: 'Jane' });
+    });
+
+    it('keeps a key when existing value is empty string', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO' },
+            { jobtitle: '' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('keeps a key when existing value is whitespace only', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO' },
+            { jobtitle: '   ' },
+            ['jobtitle'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('keeps a key when existing value is null or missing', () => {
+        const out = filterSkippedProperties(
+            { jobtitle: 'CEO', industry: 'Tech' },
+            { jobtitle: null },
+            ['jobtitle', 'industry'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO', industry: 'Tech' });
+    });
+
+    it('only removes listed skipTargets', () => {
+        const out = filterSkippedProperties(
+            { firstname: 'Jane', jobtitle: 'CEO' },
+            { firstname: 'Old', jobtitle: 'CTO' },
+            ['firstname'],
+        );
+        expect(out).toEqual({ jobtitle: 'CEO' });
+    });
+
+    it('does not mutate the input properties', () => {
+        const props = { jobtitle: 'CEO' };
+        filterSkippedProperties(props, { jobtitle: 'CTO' }, ['jobtitle']);
+        expect(props).toEqual({ jobtitle: 'CEO' });
+    });
+});
+
 describe('normalizeUrl', () => {
     it('strips https protocol', () => {
         expect(normalizeUrl('https://example.com')).toBe('example.com');
@@ -96,46 +154,5 @@ describe('normalizeUrl', () => {
 
     it('trims whitespace', () => {
         expect(normalizeUrl('  example.com  ')).toBe('example.com');
-    });
-});
-
-describe('buildItemsByUrl', () => {
-    it('builds map from items with originalStartUrl', () => {
-        const items = [
-            { originalStartUrl: 'https://example.com', data: 1 },
-            { originalStartUrl: 'https://other.com', data: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(2);
-        expect(map.get('example.com')).toEqual(items[0]);
-        expect(map.get('other.com')).toEqual(items[1]);
-    });
-
-    it('keeps the first item for duplicate URLs', () => {
-        const items = [
-            { originalStartUrl: 'https://example.com', version: 1 },
-            { originalStartUrl: 'https://example.com', version: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(1);
-        expect(map.get('example.com')).toEqual(items[0]);
-    });
-
-    it('skips items without originalStartUrl', () => {
-        const items = [
-            { otherField: 'no url' },
-            { originalStartUrl: '', data: 1 },
-            { originalStartUrl: 'https://example.com', data: 2 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.size).toBe(1);
-    });
-
-    it('normalizes URLs for matching', () => {
-        const items = [
-            { originalStartUrl: 'https://www.Example.COM/', data: 1 },
-        ];
-        const map = buildItemsByUrl(items);
-        expect(map.get('example.com')).toEqual(items[0]);
     });
 });

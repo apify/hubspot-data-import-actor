@@ -18,16 +18,37 @@
             "title": "Import Summary",
             "description": "Summary of the HubSpot import operation",
             "views": {
-                "overview": {
-                    "title": "Import Overview",
+                "companies": {
+                    "title": "Companies",
+                    "description": "Per-company import summary rows (kind = 'company')",
                     "transformation": {
                         "fields": [
+                            "kind",
                             "companyId",
                             "companyUrl",
                             "status",
-                            "success",
-                            "propertiesUpdated",
+                            "created",
+                            "updated",
+                            "skipped",
+                            "rowsTotal",
                             "error"
+                        ]
+                    },
+                    "display": {
+                        "component": "table"
+                    }
+                },
+                "contacts": {
+                    "title": "Contacts",
+                    "description": "Per-contact write results (kind = 'contact')",
+                    "transformation": {
+                        "fields": [
+                            "kind",
+                            "companyId",
+                            "displayName",
+                            "identifier",
+                            "status",
+                            "propertiesWritten"
                         ]
                     },
                     "display": {

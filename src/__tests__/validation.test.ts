@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { validateInput } from '../validation.js';
+import { validateInput, LeadsEnrichmentRowSchema, LEADS_ENRICHMENT_FIELD_KEYS } from '../validation.js';
 
 const validInput = {
     hubspotAccessToken: 'pat-na1-abc123',
     datasetId: 'abc123',
+    importMode: 'contacts' as const,
     companyUrlMapping: [{ url: 'https://example.com', companyId: '123' }],
-    dataMappings: [{ source: 'revenue', target: 'annualrevenue' }],
+    dataMappings: [{ source: 'email', target: 'email' }],
 };
 
 describe('validateInput', () => {
@@ -13,6 +14,7 @@ describe('validateInput', () => {
         const result = validateInput(validInput);
         expect(result.hubspotAccessToken).toBe('pat-na1-abc123');
         expect(result.datasetId).toBe('abc123');
+        expect(result.importMode).toBe('contacts');
     });
 
     it('rejects missing hubspotAccessToken', () => {
@@ -21,6 +23,10 @@ describe('validateInput', () => {
 
     it('rejects missing datasetId', () => {
         expect(() => validateInput({ ...validInput, datasetId: '' })).toThrow();
+    });
+
+    it('rejects importMode other than "contacts"', () => {
+        expect(() => validateInput({ ...validInput, importMode: 'company' })).toThrow();
     });
 
     it('rejects empty companyUrlMapping', () => {
@@ -36,7 +42,19 @@ describe('validateInput', () => {
     });
 
     it('rejects dataMappings with empty target', () => {
-        expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'x', target: '' }] })).toThrow();
+        expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'email', target: '' }] })).toThrow();
+    });
+
+    it('rejects dataMappings with source not in LEADS_ENRICHMENT_FIELD_KEYS', () => {
+        expect(() =>
+            validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
+        ).toThrow(/is not a valid leadsEnrichment field/);
+    });
+
+    it('accepts every LEADS_ENRICHMENT_FIELD_KEYS value as a source', () => {
+        const mappings = LEADS_ENRICHMENT_FIELD_KEYS.map((k) => ({ source: k, target: `hs_${k}` }));
+        const result = validateInput({ ...validInput, dataMappings: mappings });
+        expect(result.dataMappings).toHaveLength(LEADS_ENRICHMENT_FIELD_KEYS.length);
     });
 
     it('allows companyUrlMapping without url (optional)', () => {
@@ -54,5 +72,47 @@ describe('validateInput', () => {
         const result = validateInput(input);
         expect(result.hubspotAccessToken).toBe('token');
         expect(result.datasetId).toBe('ds123');
+    });
+});
+
+describe('LeadsEnrichmentRowSchema', () => {
+    it('accepts a fully populated row', () => {
+        const row = {
+            personId: 'p1', firstName: 'Jane', lastName: 'Doe',
+            fullName: 'Jane Doe', linkedinProfile: 'https://linkedin.com/in/janedoe',
+            email: 'jane@example.com', mobileNumber: '+1234567890',
+            jobTitle: 'Engineer', industry: 'Tech', city: 'NYC',
+            state: 'NY', country: 'US', companyId: 'c1',
+            companyName: 'Acme', companyWebsite: 'acme.com',
+            companySize: '50-100', companyLinkedin: 'https://linkedin.com/company/acme',
+            companyCity: 'NYC', companyState: 'NY', companyCountry: 'US',
+            companyPhoneNumber: '+1234567890', headline: 'Software Engineer',
+            departments: ['Engineering'], seniority: 'Senior',
+            photoUrl: 'https://example.com/photo.jpg', twitter: '@janedoe',
+        };
+        expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+    });
+
+    it('accepts a row with all null fields', () => {
+        const row = Object.fromEntries(
+            LEADS_ENRICHMENT_FIELD_KEYS.map((k) => [k, null]),
+        );
+        expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+    });
+
+    it('accepts an empty row (all fields optional)', () => {
+        expect(() => LeadsEnrichmentRowSchema.parse({})).not.toThrow();
+    });
+
+    it('covers all expected field keys', () => {
+        const expectedFields = [
+            'personId', 'firstName', 'lastName', 'fullName', 'linkedinProfile',
+            'email', 'mobileNumber', 'jobTitle', 'industry', 'city', 'state',
+            'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
+            'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
+            'companyPhoneNumber', 'headline', 'departments', 'seniority',
+            'photoUrl', 'twitter',
+        ];
+        expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
     });
 });

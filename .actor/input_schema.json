@@ -1,5 +1,5 @@
 {
-    "title": "Import Apify dataset to HubSpot companies",
+    "title": "Import Apify dataset leads into HubSpot contacts",
     "type": "object",
     "schemaVersion": 1,
     "properties": {
@@ -13,12 +13,20 @@
         "datasetId": {
             "title": "Dataset",
             "type": "string",
-            "description": "Select the Apify dataset containing enrichment data.",
+            "description": "Apify dataset containing leadsEnrichment[] rows per company.",
             "resourceType": "dataset"
+        },
+        "importMode": {
+            "title": "Import mode",
+            "description": "Only 'contacts' is supported. Each dataset item's leadsEnrichment[] rows are imported as HubSpot contacts.",
+            "type": "string",
+            "editor": "select",
+            "enum": ["contacts"],
+            "default": "contacts"
         },
         "companyUrlMapping": {
             "title": "Company URL to HubSpot ID mapping",
-            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched to companies via the 'originalStartUrl' field. Companies without a URL are skipped and reported in the output.",
+            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field and leads are associated to the matched company.",
             "type": "array",
             "editor": "schemaBased",
             "items": {
@@ -33,7 +41,7 @@
                     "companyId": {
                         "type": "string",
                         "title": "HubSpot company ID",
-                        "description": "The HubSpot company ID to update with matched data.",
+                        "description": "The HubSpot company ID that matched leads should be associated with.",
                         "editor": "textfield"
                     }
                 },
@@ -43,7 +51,7 @@
         },
         "dataMappings": {
             "title": "Field mappings",
-            "description": "Map dataset fields to HubSpot company properties. 'source' uses dot notation (e.g. 'metadata.industry'), 'target' is the internal HubSpot property name (e.g. 'industry').",
+            "description": "Map leadsEnrichment fields to HubSpot contact properties. 'source' must be a leadsEnrichment field name (e.g. 'email', 'firstName'); 'target' is the internal HubSpot contact property name (e.g. 'email', 'firstname').",
             "type": "array",
             "editor": "schemaBased",
             "items": {
@@ -52,20 +60,43 @@
                     "source": {
                         "type": "string",
                         "title": "Source field",
-                        "description": "Dot-notation path in the dataset item (e.g. 'revenue' or 'metadata.industry').",
+                        "description": "leadsEnrichment field key (e.g. 'email', 'firstName', 'jobTitle').",
                         "editor": "textfield"
                     },
                     "target": {
                         "type": "string",
                         "title": "HubSpot property",
-                        "description": "Internal name of an existing HubSpot company property (e.g. 'annualrevenue', 'industry').",
+                        "description": "Internal name of an existing HubSpot contact property (e.g. 'email', 'firstname').",
                         "editor": "textfield"
+                    },
+                    "overwriteMode": {
+                        "type": "string",
+                        "title": "When already set",
+                        "description": "'overwrite' replaces the existing HubSpot value; 'skip' leaves the existing value untouched when it is non-empty. Defaults to 'overwrite' if omitted.",
+                        "editor": "select",
+                        "enum": ["overwrite", "skip"],
+                        "default": "overwrite"
                     }
                 },
                 "required": ["source", "target"],
                 "additionalProperties": false
             }
+        },
+        "deduplication": {
+            "title": "Deduplication key",
+            "description": "Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped.",
+            "type": "string",
+            "editor": "select",
+            "enum": ["email", "phone"],
+            "default": "email"
         }
     },
-    "required": ["hubspotAccessToken", "datasetId", "companyUrlMapping", "dataMappings"]
+    "required": [
+        "hubspotAccessToken",
+        "datasetId",
+        "importMode",
+        "companyUrlMapping",
+        "dataMappings",
+        "deduplication"
+    ]
 }
