@@ -2,18 +2,79 @@ import type { DataMapping } from './types.js';
 
 type DatasetItem = Record<string, unknown>;
 
-// HubSpot's country property uses legacy names that differ from current official names.
-// Map modern/alternative names to the value HubSpot accepts.
-const COUNTRY_ALIASES: Record<string, string> = {
-    czechia: 'Czech Republic',
-    'north macedonia': 'Macedonia (FYROM)',
-    eswatini: 'Swaziland',
-    'timor-leste': 'East Timor',
-    'myanmar': 'Myanmar (Burma)',
+// Maps common country name variants to ISO 3166-1 alpha-2 codes.
+// HubSpot accepts ISO codes for all countries, making them the stable target format.
+// Only variants that differ from the exact ISO code need entries here.
+const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+    // Modern renames not yet in many datasets
+    czechia: 'CZ',
+    'czech republic': 'CZ',
+    'north macedonia': 'MK',
+    'republic of north macedonia': 'MK',
+    'macedonia (fyrom)': 'MK',
+    eswatini: 'SZ',
+    swaziland: 'SZ',
+    'timor-leste': 'TL',
+    'east timor': 'TL',
+    myanmar: 'MM',
+    'myanmar (burma)': 'MM',
+    burma: 'MM',
+    // Common English name variants
+    russia: 'RU',
+    'russian federation': 'RU',
+    'south korea': 'KR',
+    'republic of korea': 'KR',
+    'north korea': 'KP',
+    "democratic people's republic of korea": 'KP',
+    iran: 'IR',
+    'islamic republic of iran': 'IR',
+    syria: 'SY',
+    'syrian arab republic': 'SY',
+    'ivory coast': 'CI',
+    "cote d'ivoire": 'CI',
+    "côte d'ivoire": 'CI',
+    'democratic republic of the congo': 'CD',
+    'dr congo': 'CD',
+    'republic of the congo': 'CG',
+    congo: 'CG',
+    'united kingdom': 'GB',
+    'great britain': 'GB',
+    england: 'GB',
+    'united states': 'US',
+    'united states of america': 'US',
+    usa: 'US',
+    'united arab emirates': 'AE',
+    uae: 'AE',
+    taiwan: 'TW',
+    'republic of china': 'TW',
+    'vietnam': 'VN',
+    'viet nam': 'VN',
+    laos: 'LA',
+    "lao people's democratic republic": 'LA',
+    moldova: 'MD',
+    'republic of moldova': 'MD',
+    'palestine': 'PS',
+    'state of palestine': 'PS',
+    kosovo: 'XK',
+    'republic of kosovo': 'XK',
+    netherlands: 'NL',
+    holland: 'NL',
+    'cabo verde': 'CV',
+    'cape verde': 'CV',
+    brunei: 'BN',
+    'brunei darussalam': 'BN',
+    macau: 'MO',
+    macao: 'MO',
+    tanzania: 'TZ',
+    'united republic of tanzania': 'TZ',
+    bolivia: 'BO',
+    'plurinational state of bolivia': 'BO',
+    venezuela: 'VE',
+    'bolivarian republic of venezuela': 'VE',
 };
 
 const normalizeCountry = (value: string): string => {
-    return COUNTRY_ALIASES[value.toLowerCase()] ?? value;
+    return COUNTRY_NAME_TO_ISO[value.toLowerCase().trim()] ?? value;
 };
 
 /**
