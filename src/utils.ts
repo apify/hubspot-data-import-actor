@@ -2,6 +2,20 @@ import type { DataMapping } from './types.js';
 
 type DatasetItem = Record<string, unknown>;
 
+// HubSpot's country property uses legacy names that differ from current official names.
+// Map modern/alternative names to the value HubSpot accepts.
+const COUNTRY_ALIASES: Record<string, string> = {
+    czechia: 'Czech Republic',
+    'north macedonia': 'Macedonia (FYROM)',
+    eswatini: 'Swaziland',
+    'timor-leste': 'East Timor',
+    'myanmar': 'Myanmar (Burma)',
+};
+
+const normalizeCountry = (value: string): string => {
+    return COUNTRY_ALIASES[value.toLowerCase()] ?? value;
+};
+
 /**
  * Retrieves a value from a nested object using dot notation path (e.g., "user.profile.name")
  */
@@ -25,7 +39,8 @@ export const mapItemToProperties = (
     for (const mapping of dataMappings) {
         const value = getValueAtPath(item, mapping.source);
         if (value !== undefined && value !== null) {
-            properties[mapping.target] = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            properties[mapping.target] = mapping.target === 'country' ? normalizeCountry(raw) : raw;
         }
     }
 
