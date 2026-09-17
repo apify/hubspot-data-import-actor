@@ -100,7 +100,11 @@ export const mapItemToProperties = (
     for (const mapping of dataMappings) {
         const value = getValueAtPath(item, mapping.source);
         if (value !== undefined && value !== null) {
-            const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
+            const raw = Array.isArray(value)
+                ? value.map((v) => String(v)).join(';')
+                : typeof value === 'object'
+                    ? JSON.stringify(value)
+                    : String(value);
             properties[mapping.target] = mapping.target === 'country' ? normalizeCountry(raw) : raw;
         }
     }

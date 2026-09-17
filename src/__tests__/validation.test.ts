@@ -45,10 +45,10 @@ describe('validateInput', () => {
         expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'email', target: '' }] })).toThrow();
     });
 
-    it('rejects dataMappings with source not in LEADS_ENRICHMENT_FIELD_KEYS', () => {
+    it('accepts dataMappings with any source (no longer whitelisted)', () => {
         expect(() =>
-            validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
-        ).toThrow(/is not a valid leadsEnrichment field/);
+            validateInput({ ...validInput, dataMappings: [{ source: 'emailVerification.result', target: 'email_verified' }] }),
+        ).not.toThrow();
     });
 
     it('accepts every LEADS_ENRICHMENT_FIELD_KEYS value as a source', () => {
@@ -111,7 +111,7 @@ describe('LeadsEnrichmentRowSchema', () => {
             'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
             'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
             'companyPhoneNumber', 'headline', 'departments', 'seniority',
-            'photoUrl', 'twitter',
+            'photoUrl', 'twitter', 'emailVerification',
         ];
         expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
     });
