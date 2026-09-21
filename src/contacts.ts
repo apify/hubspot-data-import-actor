@@ -38,6 +38,7 @@ export const processCompanyLeads = async (
     leadsEnrichment: LeadsEnrichmentRow[],
     dataMappings: DataMapping[],
     deduplication: DeduplicationKey,
+    onlyVerifiedEmails = false,
 ): Promise<ProcessCompanyLeadsResult> => {
     const stats: ContactImportStats = {
         created: 0,
@@ -74,6 +75,12 @@ export const processCompanyLeads = async (
         .map((m) => m.target);
 
     for (const lead of leadsEnrichment) {
+        if (onlyVerifiedEmails && lead.emailVerification?.result !== 'ok') {
+            stats.skipped++;
+            pushResult(lead, 'skipped_unverified_email', '', []);
+            continue;
+        }
+
         // Dedup source on the lead: email → lead.email; phone → lead.mobileNumber.
         // HubSpot's contact property is `phone` in both cases, but the scraper emits it as mobileNumber.
         const dedupValue = (deduplication === 'email' ? lead.email : lead.mobileNumber)?.trim();

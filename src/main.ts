@@ -37,6 +37,7 @@ try {
         companyUrlMapping,
         dataMappings,
         deduplication,
+        onlyVerifiedEmails,
     } = validateInput(input);
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
@@ -127,7 +128,7 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication);
+                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, onlyVerifiedEmails);
                     stats = processed.stats;
                     contacts = processed.contacts;
                     status = deriveCompanyStatus(stats);

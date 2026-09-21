@@ -40,6 +40,18 @@ export const LeadsEnrichmentRowSchema = z.object({
     seniority: z.string().nullable().optional(),
     photoUrl: z.string().nullable().optional(),
     twitter: z.string().nullable().optional(),
+    emailVerification: z
+        .object({
+            subResult: z.string().nullish(),
+            email: z.string().nullish(),
+            quality: z.enum(['', 'good', 'bad', 'risky', 'unknown']).nullish(),
+            result: z.enum(['ok', 'catch_all', 'unknown', 'error', 'disposable', 'invalid']).nullish(),
+            free: z.boolean().nullish(),
+            role: z.boolean().nullish(),
+            error: z.string().nullish(),
+        })
+        .nullable()
+        .optional(),
 });
 
 const DataMappingSchema = z.object({
@@ -70,6 +82,7 @@ export const ActorInputSchema = z.object({
             });
         }),
     deduplication: z.enum(['email', 'phone']).default('email'),
+    onlyVerifiedEmails: z.boolean().default(false),
 });
 
 export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;
