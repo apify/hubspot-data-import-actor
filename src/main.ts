@@ -1,12 +1,13 @@
 import { Actor, log } from 'apify';
 import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
-import { validateInput } from './validation.js';
+import { validateInput, LeadsEnrichmentRowSchema } from './validation.js';
 import { normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
 import {
     assertDatasetHasLeads,
     assertSomeCompaniesMatch,
     assertSomeWritesSucceeded,
+    assertVerificationDataPresent,
     deriveCompanyStatus,
 } from './failStates.js';
 
@@ -77,9 +78,16 @@ try {
             const url = item.originalStartUrl;
             if (typeof url !== 'string' || !url) continue;
             const key = normalizeUrl(url);
-            const leads = Array.isArray(item.leadsEnrichment)
-                ? (item.leadsEnrichment as LeadsEnrichmentRow[])
-                : [];
+            const raw = Array.isArray(item.leadsEnrichment) ? item.leadsEnrichment : [];
+            const leads: LeadsEnrichmentRow[] = [];
+            for (const row of raw) {
+                const parsed = LeadsEnrichmentRowSchema.safeParse(row);
+                if (!parsed.success) {
+                    log.warning(`Skipping malformed leadsEnrichment row — ${parsed.error.message}`);
+                } else {
+                    leads.push(parsed.data);
+                }
+            }
             const existing = leadsByUrl.get(key);
             if (existing) existing.push(...leads);
             else leadsByUrl.set(key, leads);
@@ -98,6 +106,7 @@ try {
 
     assertDatasetHasLeads(datasetId, totalItems, leadsByUrl);
     assertSomeCompaniesMatch(companyUrlMapping, leadsByUrl);
+    assertVerificationDataPresent(onlyVerifiedEmails, leadsByUrl);
 
     const unmatchedCompanies: string[] = [];
 

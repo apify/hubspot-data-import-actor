@@ -74,6 +74,10 @@ export const processCompanyLeads = async (
         .filter((m) => m.overwriteMode === 'skip')
         .map((m) => m.target);
 
+    if (onlyVerifiedEmails && leadsEnrichment.length > 0 && !leadsEnrichment.some((l) => l.emailVerification)) {
+        log.warning(`Company ${companyId}: onlyVerifiedEmails is enabled but no lead carries an email verification object — all leads will be skipped. The enrichment run may have had email verification disabled.`);
+    }
+
     for (const lead of leadsEnrichment) {
         if (onlyVerifiedEmails && lead.emailVerification?.result !== 'ok') {
             stats.skipped++;
