@@ -47,7 +47,7 @@ describe('validateInput', () => {
 
     it('accepts dataMappings with any source (no longer whitelisted)', () => {
         expect(() =>
-            validateInput({ ...validInput, dataMappings: [{ source: 'emailVerification.result', target: 'email_verified' }] }),
+            validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
         ).not.toThrow();
     });
 
@@ -111,7 +111,7 @@ describe('LeadsEnrichmentRowSchema', () => {
             'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
             'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
             'companyPhoneNumber', 'headline', 'departments', 'seniority',
-            'photoUrl', 'twitter', 'emailVerification',
+            'photoUrl', 'twitter',
         ];
         expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
     });

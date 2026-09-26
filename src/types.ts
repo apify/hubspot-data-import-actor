@@ -70,7 +70,6 @@ export interface LeadsEnrichmentRow {
     seniority?: string | null;
     photoUrl?: string | null;
     twitter?: string | null;
-    emailVerification?: Record<string, unknown> | null;
 }
 
 export interface ActorOutput {

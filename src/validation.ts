@@ -8,7 +8,7 @@ export const LEADS_ENRICHMENT_FIELD_KEYS = [
     'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
     'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
     'companyPhoneNumber', 'headline', 'departments', 'seniority',
-    'photoUrl', 'twitter', 'emailVerification',
+    'photoUrl', 'twitter',
 ] as const;
 
 export const LeadsEnrichmentRowSchema = z.object({
@@ -38,7 +38,6 @@ export const LeadsEnrichmentRowSchema = z.object({
     seniority: z.string().nullable().optional(),
     photoUrl: z.string().nullable().optional(),
     twitter: z.string().nullable().optional(),
-    emailVerification: z.unknown().nullable().optional(),
 });
 
 const DataMappingSchema = z.object({
