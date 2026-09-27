@@ -3,6 +3,7 @@ import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, Lea
 import { validateInput } from './validation.js';
 import { normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
+import { ensureApifyPropertiesExist } from './api.js';
 import {
     assertDatasetHasLeads,
     assertSomeCompaniesMatch,
@@ -37,9 +38,22 @@ try {
         companyUrlMapping,
         dataMappings,
         deduplication,
+        enrichmentObservability,
     } = validateInput(input);
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
+
+    let lastEnrichedAtPropertyName: string | undefined;
+    if (enrichmentObservability) {
+        const ensured = await ensureApifyPropertiesExist(
+            hubspotAccessToken,
+            enrichmentObservability.lastEnrichedAtPropertyName,
+        );
+        if (ensured) {
+            lastEnrichedAtPropertyName = enrichmentObservability.lastEnrichedAtPropertyName;
+            log.info(`Enrichment observability enabled: stamping "${lastEnrichedAtPropertyName}" on every contact create/update`);
+        }
+    }
 
     // Restore state from previous migration if available
     const store = await Actor.openKeyValueStore();
@@ -127,7 +141,7 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication);
+                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, lastEnrichedAtPropertyName);
                     stats = processed.stats;
                     contacts = processed.contacts;
                     status = deriveCompanyStatus(stats);

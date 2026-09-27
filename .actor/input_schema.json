@@ -89,6 +89,21 @@
             "editor": "select",
             "enum": ["email", "phone"],
             "default": "email"
+        },
+        "enrichmentObservability": {
+            "title": "Enrichment observability",
+            "description": "Optional. When provided, the actor ensures a HubSpot contact datetime property (e.g. 'apify_last_enriched_at') exists and stamps the current timestamp on every contact it creates or updates.",
+            "type": "object",
+            "properties": {
+                "lastEnrichedAtPropertyName": {
+                    "type": "string",
+                    "title": "Last enriched at property",
+                    "description": "Internal (name) of the HubSpot contact datetime property (e.g. 'apify_last_enriched_at'). Must be a valid existing property or one the actor can create.",
+                    "editor": "textfield"
+                }
+            },
+            "required": ["lastEnrichedAtPropertyName"],
+            "additionalProperties": false
         }
     },
     "required": [

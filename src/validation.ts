@@ -48,6 +48,10 @@ const DataMappingSchema = z.object({
     overwriteMode: z.enum(['overwrite', 'skip']).default('overwrite'),
 });
 
+const EnrichmentObservabilitySchema = z.object({
+    lastEnrichedAtPropertyName: nonEmptyString.describe('Internal name of the HubSpot contact datetime property to stamp with the current timestamp on every create/update'),
+});
+
 export const ActorInputSchema = z.object({
     hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
     datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
@@ -70,6 +74,7 @@ export const ActorInputSchema = z.object({
             });
         }),
     deduplication: z.enum(['email', 'phone']).default('email'),
+    enrichmentObservability: EnrichmentObservabilitySchema.optional().describe('Optional observability settings. When present, the actor will ensure the specified HubSpot property exists and stamp it on every contact create/update. When absent, no observability stamping is performed.'),
 });
 
 export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;
