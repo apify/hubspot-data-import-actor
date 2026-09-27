@@ -38,6 +38,7 @@ export const processCompanyLeads = async (
     leadsEnrichment: LeadsEnrichmentRow[],
     dataMappings: DataMapping[],
     deduplication: DeduplicationKey,
+    lastEnrichedAtPropertyName?: string,
 ): Promise<ProcessCompanyLeadsResult> => {
     const stats: ContactImportStats = {
         created: 0,
@@ -102,6 +103,9 @@ export const processCompanyLeads = async (
                     contactId = existing.id;
                     writeStatus = 'skipped_already_complete';
                 } else {
+                    if (lastEnrichedAtPropertyName) {
+                        filtered[lastEnrichedAtPropertyName] = new Date().toISOString();
+                    }
                     await updateContact(token, existing.id, filtered);
                     contactId = existing.id;
                     stats.updated++;
@@ -109,6 +113,9 @@ export const processCompanyLeads = async (
                     writtenKeys = Object.keys(filtered);
                 }
             } else {
+                if (lastEnrichedAtPropertyName) {
+                    properties[lastEnrichedAtPropertyName] = new Date().toISOString();
+                }
                 contactId = await createContact(token, properties);
                 stats.created++;
                 writeStatus = 'created';

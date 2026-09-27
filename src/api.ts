@@ -1,4 +1,5 @@
 import { Client } from '@hubspot/api-client';
+import { log } from 'apify';
 
 const clientCache = new Map<string, Client>();
 const getClient = (token: string): Client => {
@@ -151,5 +152,50 @@ export const associateContactToCompany = async (
     } catch (err) {
         if (errorStatus(err) === 409) return;
         translateError(err, path);
+    }
+};
+
+export const ensureApifyPropertiesExist = async (
+    token: string,
+    lastEnrichedAtPropertyName: string,
+): Promise<boolean> => {
+    const client = getClient(token);
+    try {
+        try {
+            await client.crm.properties.groupsApi.create('contacts', {
+                name: 'apify',
+                label: 'Apify',
+            } as never);
+        } catch (err) {
+            const status = errorStatus(err);
+            if (status !== 409 && status !== 400) throw err;
+        }
+
+        try {
+            await client.crm.properties.coreApi.create('contacts', {
+                name: lastEnrichedAtPropertyName,
+                label: 'Last enrichment by Apify',
+                type: 'datetime' as never,
+                fieldType: 'datetime' as never,
+                groupName: 'apify',
+                description: 'Timestamp of the last Apify enrichment run that created or updated this contact.',
+            } as never);
+        } catch (err) {
+            const status = errorStatus(err);
+            if (status !== 409) throw err;
+        }
+        return true;
+    } catch (err) {
+        if (errorStatus(err) === 403) {
+            log.warning(
+                `Observability disabled: token lacks 'crm.schemas.contacts.write' scope. `
+                + `Property "${lastEnrichedAtPropertyName}" will not be created or stamped.`
+            );
+        } else {
+            log.warning(
+                `Could not ensure observability property "${lastEnrichedAtPropertyName}": ${errorBody(err)}`
+            );
+        }
+        return false;
     }
 };

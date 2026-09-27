@@ -331,4 +331,17 @@ describe('processCompanyLeads', () => {
             expect(contacts[0].displayName).toBe('Foo Bar');
         });
     });
+
+    describe('enrichment observability stamp', () => {
+        const STAMP = 'apify_last_enriched_at';
+
+        it('stamps the property on creation', async () => {
+            searchByEmail.mockResolvedValueOnce(null);
+            create.mockResolvedValueOnce('c-new');
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            expect(stats.created).toBe(1);
+            expect(create).toHaveBeenCalledWith('tok', expect.objectContaining({ [STAMP]: expect.any(String) }));
+        });
+    });
 });
