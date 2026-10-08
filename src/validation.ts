@@ -11,8 +11,6 @@ export const LEADS_ENRICHMENT_FIELD_KEYS = [
     'photoUrl', 'twitter',
 ] as const;
 
-const LEADS_ENRICHMENT_FIELD_KEY_SET = new Set<string>(LEADS_ENRICHMENT_FIELD_KEYS);
-
 export const LeadsEnrichmentRowSchema = z.object({
     personId: z.string().nullable().optional(),
     firstName: z.string().nullable().optional(),
@@ -57,18 +55,7 @@ export const ActorInputSchema = z.object({
         .min(1, 'Must have at least one company to HubSpot ID mapping'),
     dataMappings: z
         .array(DataMappingSchema)
-        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields')
-        .superRefine((mappings, ctx) => {
-            mappings.forEach((m, i) => {
-                if (!LEADS_ENRICHMENT_FIELD_KEY_SET.has(m.source)) {
-                    ctx.addIssue({
-                        code: 'custom',
-                        path: [i, 'source'],
-                        message: `"${m.source}" is not a valid leadsEnrichment field. Allowed: ${LEADS_ENRICHMENT_FIELD_KEYS.join(', ')}`,
-                    });
-                }
-            });
-        }),
+        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),
     deduplication: z.enum(['email', 'phone']).default('email'),
 });
 

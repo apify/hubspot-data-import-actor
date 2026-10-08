@@ -45,10 +45,10 @@ describe('validateInput', () => {
         expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'email', target: '' }] })).toThrow();
     });
 
-    it('rejects dataMappings with source not in LEADS_ENRICHMENT_FIELD_KEYS', () => {
+    it('accepts dataMappings with any source (no longer whitelisted)', () => {
         expect(() =>
             validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
-        ).toThrow(/is not a valid leadsEnrichment field/);
+        ).not.toThrow();
     });
 
     it('accepts every LEADS_ENRICHMENT_FIELD_KEYS value as a source', () => {

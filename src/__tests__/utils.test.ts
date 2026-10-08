@@ -56,10 +56,16 @@ describe('mapItemToProperties', () => {
         expect(mapItemToProperties(item, mappings)).toEqual({ pc: 'ok' });
     });
 
-    it('serializes objects as JSON', () => {
+    it('joins arrays with semicolons', () => {
         const item = { tags: ['a', 'b'] };
         const mappings = [{ source: 'tags', target: 'tags' }];
-        expect(mapItemToProperties(item, mappings)).toEqual({ tags: '["a","b"]' });
+        expect(mapItemToProperties(item, mappings)).toEqual({ tags: 'a;b' });
+    });
+
+    it('serializes plain objects as JSON', () => {
+        const item = { meta: { x: 1, y: 2 } };
+        const mappings = [{ source: 'meta', target: 'meta' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ meta: '{"x":1,"y":2}' });
     });
 
     it('returns empty object when no mappings match', () => {
