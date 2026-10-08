@@ -30,6 +30,22 @@ export const assertSomeCompaniesMatch = (
     }
 };
 
+export const assertVerificationDataPresent = (
+    onlyVerifiedEmails: boolean,
+    leadsByUrl: Map<string, LeadsEnrichmentRow[]>,
+): void => {
+    if (!onlyVerifiedEmails) return;
+    for (const leads of leadsByUrl.values()) {
+        if (leads.some((l) => l.emailVerification)) return;
+    }
+    throw new Error(
+        'onlyVerifiedEmails is enabled but no lead in the dataset carries an emailVerification block. '
+        + 'The enrichment run was likely produced with email verification disabled '
+        + '(verifyLeadsEnrichmentEmails), by an older actor build, or no lead had an email. '
+        + 'Nothing would be imported.',
+    );
+};
+
 export const assertSomeWritesSucceeded = (totals: {
     totalCreated: number;
     totalUpdated: number;
