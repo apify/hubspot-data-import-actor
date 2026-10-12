@@ -4,6 +4,7 @@ import {
     assertDatasetHasLeads,
     assertSomeCompaniesMatch,
     assertSomeWritesSucceeded,
+    assertVerificationDataPresent,
     deriveCompanyStatus,
 } from '../failStates.js';
 
@@ -103,5 +104,38 @@ describe('deriveCompanyStatus', () => {
     it('returns "imported" when there is no error even if no writes happened', () => {
         // e.g. every row had no email — skipped but not an error
         expect(deriveCompanyStatus(base({ rowsTotal: 2, skipped: 2 }))).toBe('imported');
+    });
+});
+
+describe('assertVerificationDataPresent', () => {
+    it('throws when flag is on and no lead has an emailVerification block', () => {
+        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
+            ['example.com', [{ email: 'a@b.com' }]],
+            ['foo.com', [{ email: 'c@d.com' }]],
+        ]);
+        expect(() => assertVerificationDataPresent(true, leadsByUrl)).toThrow(/emailVerification/);
+    });
+
+    it('does not throw when flag is off', () => {
+        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
+            ['example.com', [{ email: 'a@b.com' }]],
+        ]);
+        expect(() => assertVerificationDataPresent(false, leadsByUrl)).not.toThrow();
+    });
+
+    it('does not throw when flag is off and map is empty', () => {
+        expect(() => assertVerificationDataPresent(false, new Map())).not.toThrow();
+    });
+
+    it('does not throw when at least one lead has an emailVerification block', () => {
+        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
+            ['example.com', [{ email: 'a@b.com' }]],
+            ['foo.com', [{ email: 'c@d.com', emailVerification: { result: 'ok' } }]],
+        ]);
+        expect(() => assertVerificationDataPresent(true, leadsByUrl)).not.toThrow();
+    });
+
+    it('throws when flag is on and map is empty (no leads is no verification)', () => {
+        expect(() => assertVerificationDataPresent(true, new Map())).toThrow(/emailVerification/);
     });
 });

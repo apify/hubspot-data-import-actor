@@ -30,6 +30,7 @@ export type ContactStatus =
     | 'created'
     | 'updated'
     | 'skipped_no_identifier'
+    | 'skipped_unverified_email'
     | 'skipped_already_complete'
     | 'failed';
 
@@ -70,6 +71,15 @@ export interface LeadsEnrichmentRow {
     seniority?: string | null;
     photoUrl?: string | null;
     twitter?: string | null;
+    emailVerification?: {
+        subResult?: string | null;
+        email?: string | null;
+        quality?: '' | 'good' | 'bad' | 'risky' | 'unknown' | null;
+        result?: 'ok' | 'catch_all' | 'unknown' | 'error' | 'disposable' | 'invalid' | null;
+        free?: boolean | null;
+        role?: boolean | null;
+        error?: string | null;
+    } | null;
 }
 
 export interface ActorOutput {

@@ -331,4 +331,57 @@ describe('processCompanyLeads', () => {
             expect(contacts[0].displayName).toBe('Foo Bar');
         });
     });
+
+    describe('onlyVerifiedEmails', () => {
+        it('imports a lead when emailVerification result is ok', async () => {
+            searchByEmail.mockResolvedValueOnce(null);
+            create.mockResolvedValueOnce('c-verified');
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'Verified', emailVerification: { result: 'ok' } },
+            ];
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+        });
+
+        it('skips lead when emailVerification result is not ok', async () => {
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'Bad', emailVerification: { result: 'invalid' } },
+            ];
+            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(searchByEmail).not.toHaveBeenCalled();
+            expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
+        });
+
+        it('skips lead when emailVerification block is missing', async () => {
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'NoVerification' },
+            ];
+            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(searchByEmail).not.toHaveBeenCalled();
+            expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
+        });
+
+        it('imports lead with unverified email when flag is off', async () => {
+            searchByEmail.mockResolvedValueOnce(null);
+            create.mockResolvedValueOnce('c-unverified');
+            const leads: LeadsEnrichmentRow[] = [
+                { email: 'a@b.com', firstName: 'Unverified', emailVerification: { result: 'invalid' } },
+            ];
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', false);
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+        });
+
+        it('applies the filter when deduplication is phone (filter is dedup-mode independent)', async () => {
+            searchByPhone.mockResolvedValueOnce(null);
+            const leads: LeadsEnrichmentRow[] = [
+                { mobileNumber: '+123', firstName: 'Bad', emailVerification: { result: 'invalid' } },
+            ];
+            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone', true);
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(searchByPhone).not.toHaveBeenCalled();
+            expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
+        });
+    });
 });

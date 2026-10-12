@@ -2,6 +2,50 @@ import { z } from 'zod';
 
 const nonEmptyString = z.string().trim().min(1);
 
+// Kept for per-row parsing in main.ts (malformed-row skipping). .loose() because
+// mappable sources are no longer whitelisted — the backend serves the actor's live
+// output schema, so fields not listed here (including new ones) must survive parsing.
+export const LeadsEnrichmentRowSchema = z.object({
+    personId: z.string().nullable().optional(),
+    firstName: z.string().nullable().optional(),
+    lastName: z.string().nullable().optional(),
+    fullName: z.string().nullable().optional(),
+    linkedinProfile: z.string().nullable().optional(),
+    email: z.string().nullable().optional(),
+    mobileNumber: z.string().nullable().optional(),
+    jobTitle: z.string().nullable().optional(),
+    industry: z.string().nullable().optional(),
+    city: z.string().nullable().optional(),
+    state: z.string().nullable().optional(),
+    country: z.string().nullable().optional(),
+    companyId: z.string().nullable().optional(),
+    companyName: z.string().nullable().optional(),
+    companyWebsite: z.string().nullable().optional(),
+    companySize: z.string().nullable().optional(),
+    companyLinkedin: z.string().nullable().optional(),
+    companyCity: z.string().nullable().optional(),
+    companyState: z.string().nullable().optional(),
+    companyCountry: z.string().nullable().optional(),
+    companyPhoneNumber: z.string().nullable().optional(),
+    headline: z.string().nullable().optional(),
+    departments: z.array(z.string()).nullable().optional(),
+    seniority: z.string().nullable().optional(),
+    photoUrl: z.string().nullable().optional(),
+    twitter: z.string().nullable().optional(),
+    emailVerification: z
+        .object({
+            subResult: z.string().nullish(),
+            email: z.string().nullish(),
+            quality: z.enum(['', 'good', 'bad', 'risky', 'unknown']).nullish(),
+            result: z.enum(['ok', 'catch_all', 'unknown', 'error', 'disposable', 'invalid']).nullish(),
+            free: z.boolean().nullish(),
+            role: z.boolean().nullish(),
+            error: z.string().nullish(),
+        })
+        .nullable()
+        .optional(),
+}).loose();
+
 const DataMappingSchema = z.object({
     source: nonEmptyString,
     target: nonEmptyString,
@@ -19,6 +63,7 @@ export const ActorInputSchema = z.object({
         .array(DataMappingSchema)
         .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),
     deduplication: z.enum(['email', 'phone']).default('email'),
+    onlyVerifiedEmails: z.boolean().default(false),
 });
 
 export type ValidatedActorInput = z.infer<typeof ActorInputSchema>;

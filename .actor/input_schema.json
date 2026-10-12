@@ -89,6 +89,12 @@
             "editor": "select",
             "enum": ["email", "phone"],
             "default": "email"
+        },
+        "onlyVerifiedEmails": {
+            "title": "Only verified emails",
+            "description": "When enabled, only leads whose emailVerification.result is 'ok' are imported. Requires the enrichment actor to have email verification enabled (verifyLeadsEnrichmentEmails).",
+            "type": "boolean",
+            "default": false
         }
     },
     "required": [

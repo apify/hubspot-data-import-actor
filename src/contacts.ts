@@ -38,6 +38,7 @@ export const processCompanyLeads = async (
     leadsEnrichment: LeadsEnrichmentRow[],
     dataMappings: DataMapping[],
     deduplication: DeduplicationKey,
+    onlyVerifiedEmails = false,
 ): Promise<ProcessCompanyLeadsResult> => {
     const stats: ContactImportStats = {
         created: 0,
@@ -73,7 +74,17 @@ export const processCompanyLeads = async (
         .filter((m) => m.overwriteMode === 'skip')
         .map((m) => m.target);
 
+    if (onlyVerifiedEmails && leadsEnrichment.length > 0 && !leadsEnrichment.some((l) => l.emailVerification)) {
+        log.warning(`Company ${companyId}: onlyVerifiedEmails is enabled but no lead carries an email verification object — all leads will be skipped. The enrichment run may have had email verification disabled.`);
+    }
+
     for (const lead of leadsEnrichment) {
+        if (onlyVerifiedEmails && lead.emailVerification?.result !== 'ok') {
+            stats.skipped++;
+            pushResult(lead, 'skipped_unverified_email', '', []);
+            continue;
+        }
+
         // Dedup source on the lead: email → lead.email; phone → lead.mobileNumber.
         // HubSpot's contact property is `phone` in both cases, but the scraper emits it as mobileNumber.
         const dedupValue = (deduplication === 'email' ? lead.email : lead.mobileNumber)?.trim();
