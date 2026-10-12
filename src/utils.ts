@@ -91,6 +91,8 @@ export const getValueAtPath = (obj: DatasetItem, path: string): unknown => {
  * Maps a single dataset item to HubSpot company properties using the provided field mappings.
  * All values are converted to strings since HubSpot handles type coercion internally.
  */
+const serializeValue = (v: unknown): string => (typeof v === 'object' ? JSON.stringify(v) : String(v));
+
 export const mapItemToProperties = (
     item: DatasetItem,
     dataMappings: ReadonlyArray<Pick<DataMapping, 'source' | 'target'>>,
@@ -101,10 +103,8 @@ export const mapItemToProperties = (
         const value = getValueAtPath(item, mapping.source);
         if (value !== undefined && value !== null) {
             const raw = Array.isArray(value)
-                ? value.map((v) => String(v)).join(';')
-                : typeof value === 'object'
-                    ? JSON.stringify(value)
-                    : String(value);
+                ? value.map(serializeValue).join(';')
+                : serializeValue(value);
             properties[mapping.target] = mapping.target === 'country' ? normalizeCountry(raw) : raw;
         }
     }

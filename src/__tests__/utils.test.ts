@@ -62,6 +62,18 @@ describe('mapItemToProperties', () => {
         expect(mapItemToProperties(item, mappings)).toEqual({ tags: 'a;b' });
     });
 
+    it('JSON-stringifies object elements inside joined arrays', () => {
+        const item = { items: [{ x: 1 }, { y: 2 }] };
+        const mappings = [{ source: 'items', target: 'items' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ items: '{"x":1};{"y":2}' });
+    });
+
+    it('handles mixed arrays of primitives and objects', () => {
+        const item = { tags: ['a', { b: 1 }, 'c'] };
+        const mappings = [{ source: 'tags', target: 'tags' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ tags: 'a;{"b":1};c' });
+    });
+
     it('serializes plain objects as JSON', () => {
         const item = { meta: { x: 1, y: 2 } };
         const mappings = [{ source: 'meta', target: 'meta' }];
