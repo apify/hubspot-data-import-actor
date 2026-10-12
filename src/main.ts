@@ -1,7 +1,7 @@
 import { Actor, log } from 'apify';
 import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
 import { validateInput } from './validation.js';
-import { normalizeUrl } from './utils.js';
+import { findDeadSources, normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
 import {
     assertDatasetHasLeads,
@@ -97,6 +97,14 @@ try {
 
     assertDatasetHasLeads(datasetId, totalItems, leadsByUrl);
     assertSomeCompaniesMatch(companyUrlMapping, leadsByUrl);
+
+    // With no source whitelist, a typo'd mapping source is silently skipped on every
+    // row — surface it once per run rather than per row or per company.
+    const allLeads = [...leadsByUrl.values()].flat() as Record<string, unknown>[];
+    const deadSources = findDeadSources(allLeads, cleanedMappings.map((m) => m.source));
+    if (deadSources.length > 0) {
+        log.warning(`Mapping sources resolved on no dataset row — check for typos: ${deadSources.map((s) => `"${s}"`).join(', ')}`);
+    }
 
     const unmatchedCompanies: string[] = [];
 
