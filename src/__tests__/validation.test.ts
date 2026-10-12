@@ -115,4 +115,21 @@ describe('LeadsEnrichmentRowSchema', () => {
         ];
         expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
     });
+
+    describe('emailVerification', () => {
+        it('accepts a row with a valid emailVerification block', () => {
+            const row = { email: 'a@b.com', emailVerification: { result: 'ok' } };
+            expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+        });
+
+        it('accepts a row with emailVerification set to null', () => {
+            const row = { email: 'a@b.com', emailVerification: null };
+            expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
+        });
+
+        it('rejects a row with an unknown emailVerification result value', () => {
+            const row = { email: 'a@b.com', emailVerification: { result: 'good' } };
+            expect(() => LeadsEnrichmentRowSchema.parse(row)).toThrow();
+        });
+    });
 });
