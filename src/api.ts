@@ -155,36 +155,90 @@ export const associateContactToCompany = async (
     }
 };
 
+const APIFY_PROPERTY_GROUP_NAME = 'apify';
+
+interface ExistingProperty {
+    type?: string;
+    fieldType?: string;
+    calculated?: boolean;
+    archived?: boolean;
+}
+
+/**
+ * A HubSpot `datetime` property is created with `fieldType: 'date'`
+ * (see HubSpot's type/fieldType table — `datetime` pairs with `date`, not
+ * `datetime`). Sending `fieldType: 'datetime'` is rejected by the API and
+ * the property is never created, so observability silently never activates.
+ */
+const isCompatibleDatetimeProperty = (existing: ExistingProperty): boolean => (
+    existing.type === 'datetime'
+    && !existing.calculated
+    && !existing.archived
+);
+
+const ensureApifyPropertyGroup = async (client: Client): Promise<void> => {
+    try {
+        await client.crm.properties.groupsApi.create('contacts', {
+            name: APIFY_PROPERTY_GROUP_NAME,
+            label: 'Apify',
+        } as never);
+    } catch (err) {
+        // 409 = group already exists; 400 = some HubSpot accounts return 400 for duplicates.
+        const status = errorStatus(err);
+        if (status !== 409 && status !== 400) throw err;
+    }
+};
+
+const ensureStampProperty = async (
+    client: Client,
+    propertyName: string,
+): Promise<boolean> => {
+    try {
+        await client.crm.properties.coreApi.create('contacts', {
+            name: propertyName,
+            label: 'Last enrichment by Apify',
+            type: 'datetime',
+            fieldType: 'date',
+            groupName: APIFY_PROPERTY_GROUP_NAME,
+            description: 'Timestamp of the last Apify enrichment run that created or updated this contact.',
+        } as never);
+        return true;
+    } catch (err) {
+        if (errorStatus(err) !== 409) throw err;
+    }
+
+    // Property already exists (409) — only stamp if it is a writable datetime
+    // property we can safely write an ISO timestamp to. An incompatible existing
+    // property (e.g. a number, a date-only field, a calculated/archived property)
+    // must NOT enable stamping, otherwise the timestamp would be sent inside a
+    // contact write that HubSpot would reject, bricking that contact's enrichment.
+    try {
+        const existing = await client.crm.properties.coreApi.getByName('contacts', propertyName) as ExistingProperty;
+        if (isCompatibleDatetimeProperty(existing)) return true;
+        log.warning(
+            `Observability disabled: existing HubSpot property "${propertyName}" `
+            + `is not a writable datetime property `
+            + `(type="${existing?.type ?? ''}", calculated=${existing?.calculated ?? false}, `
+            + `archived=${existing?.archived ?? false}). Stamping skipped to avoid breaking contact writes.`
+        );
+        return false;
+    } catch (lookupErr) {
+        log.warning(
+            `Observability disabled: property "${propertyName}" already exists but could not be read back `
+            + `to verify compatibility: ${errorBody(lookupErr)}. Stamping skipped.`
+        );
+        return false;
+    }
+};
+
 export const ensureApifyPropertiesExist = async (
     token: string,
     lastEnrichedAtPropertyName: string,
 ): Promise<boolean> => {
     const client = getClient(token);
     try {
-        try {
-            await client.crm.properties.groupsApi.create('contacts', {
-                name: 'apify',
-                label: 'Apify',
-            } as never);
-        } catch (err) {
-            const status = errorStatus(err);
-            if (status !== 409 && status !== 400) throw err;
-        }
-
-        try {
-            await client.crm.properties.coreApi.create('contacts', {
-                name: lastEnrichedAtPropertyName,
-                label: 'Last enrichment by Apify',
-                type: 'datetime' as never,
-                fieldType: 'datetime' as never,
-                groupName: 'apify',
-                description: 'Timestamp of the last Apify enrichment run that created or updated this contact.',
-            } as never);
-        } catch (err) {
-            const status = errorStatus(err);
-            if (status !== 409) throw err;
-        }
-        return true;
+        await ensureApifyPropertyGroup(client);
+        return await ensureStampProperty(client, lastEnrichedAtPropertyName);
     } catch (err) {
         if (errorStatus(err) === 403) {
             log.warning(

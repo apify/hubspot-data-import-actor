@@ -94,6 +94,7 @@
             "title": "Enrichment observability",
             "description": "Optional. When provided, the actor ensures a HubSpot contact datetime property (e.g. 'apify_last_enriched_at') exists and stamps the current timestamp on every contact it creates or updates.",
             "type": "object",
+            "editor": "schemaBased",
             "properties": {
                 "lastEnrichedAtPropertyName": {
                     "type": "string",
