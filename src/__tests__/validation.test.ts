@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateInput, LeadsEnrichmentRowSchema, LEADS_ENRICHMENT_FIELD_KEYS } from '../validation.js';
+import { validateInput, LeadsEnrichmentRowSchema } from '../validation.js';
 
 const validInput = {
     hubspotAccessToken: 'pat-na1-abc123',
@@ -45,16 +45,16 @@ describe('validateInput', () => {
         expect(() => validateInput({ ...validInput, dataMappings: [{ source: 'email', target: '' }] })).toThrow();
     });
 
-    it('rejects dataMappings with source not in LEADS_ENRICHMENT_FIELD_KEYS', () => {
+    it('accepts dataMappings with any source (no longer whitelisted)', () => {
         expect(() =>
             validateInput({ ...validInput, dataMappings: [{ source: 'revenue', target: 'annualrevenue' }] }),
-        ).toThrow(/is not a valid leadsEnrichment field/);
+        ).not.toThrow();
     });
 
-    it('accepts every LEADS_ENRICHMENT_FIELD_KEYS value as a source', () => {
-        const mappings = LEADS_ENRICHMENT_FIELD_KEYS.map((k) => ({ source: k, target: `hs_${k}` }));
-        const result = validateInput({ ...validInput, dataMappings: mappings });
-        expect(result.dataMappings).toHaveLength(LEADS_ENRICHMENT_FIELD_KEYS.length);
+    it('accepts dot-path sources', () => {
+        expect(() =>
+            validateInput({ ...validInput, dataMappings: [{ source: 'meta.industry', target: 'industry' }] }),
+        ).not.toThrow();
     });
 
     it('allows companyUrlMapping without url (optional)', () => {
@@ -95,7 +95,7 @@ describe('LeadsEnrichmentRowSchema', () => {
 
     it('accepts a row with all null fields', () => {
         const row = Object.fromEntries(
-            LEADS_ENRICHMENT_FIELD_KEYS.map((k) => [k, null]),
+            Object.keys(LeadsEnrichmentRowSchema.shape).map((k) => [k, null]),
         );
         expect(() => LeadsEnrichmentRowSchema.parse(row)).not.toThrow();
     });
@@ -104,16 +104,10 @@ describe('LeadsEnrichmentRowSchema', () => {
         expect(() => LeadsEnrichmentRowSchema.parse({})).not.toThrow();
     });
 
-    it('covers all expected field keys', () => {
-        const expectedFields = [
-            'personId', 'firstName', 'lastName', 'fullName', 'linkedinProfile',
-            'email', 'mobileNumber', 'jobTitle', 'industry', 'city', 'state',
-            'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
-            'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
-            'companyPhoneNumber', 'headline', 'departments', 'seniority',
-            'photoUrl', 'twitter',
-        ];
-        expect([...LEADS_ENRICHMENT_FIELD_KEYS]).toEqual(expectedFields);
+    it('preserves unknown fields (.loose) so unlisted mappable sources survive parsing', () => {
+        const parsed = LeadsEnrichmentRowSchema.parse({ customNewField: 'x', meta: { industry: 'Tech' } });
+        expect(parsed.customNewField).toBe('x');
+        expect(parsed.meta).toEqual({ industry: 'Tech' });
     });
 
     describe('emailVerification', () => {

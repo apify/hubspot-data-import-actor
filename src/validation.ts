@@ -2,17 +2,9 @@ import { z } from 'zod';
 
 const nonEmptyString = z.string().trim().min(1);
 
-export const LEADS_ENRICHMENT_FIELD_KEYS = [
-    'personId', 'firstName', 'lastName', 'fullName', 'linkedinProfile',
-    'email', 'mobileNumber', 'jobTitle', 'industry', 'city', 'state',
-    'country', 'companyId', 'companyName', 'companyWebsite', 'companySize',
-    'companyLinkedin', 'companyCity', 'companyState', 'companyCountry',
-    'companyPhoneNumber', 'headline', 'departments', 'seniority',
-    'photoUrl', 'twitter',
-] as const;
-
-const LEADS_ENRICHMENT_FIELD_KEY_SET = new Set<string>(LEADS_ENRICHMENT_FIELD_KEYS);
-
+// Kept for per-row parsing in main.ts (malformed-row skipping). .loose() because
+// mappable sources are no longer whitelisted — the backend serves the actor's live
+// output schema, so fields not listed here (including new ones) must survive parsing.
 export const LeadsEnrichmentRowSchema = z.object({
     personId: z.string().nullable().optional(),
     firstName: z.string().nullable().optional(),
@@ -52,7 +44,7 @@ export const LeadsEnrichmentRowSchema = z.object({
         })
         .nullable()
         .optional(),
-});
+}).loose();
 
 const DataMappingSchema = z.object({
     source: nonEmptyString,
@@ -69,18 +61,7 @@ export const ActorInputSchema = z.object({
         .min(1, 'Must have at least one company to HubSpot ID mapping'),
     dataMappings: z
         .array(DataMappingSchema)
-        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields')
-        .superRefine((mappings, ctx) => {
-            mappings.forEach((m, i) => {
-                if (!LEADS_ENRICHMENT_FIELD_KEY_SET.has(m.source)) {
-                    ctx.addIssue({
-                        code: 'custom',
-                        path: [i, 'source'],
-                        message: `"${m.source}" is not a valid leadsEnrichment field. Allowed: ${LEADS_ENRICHMENT_FIELD_KEYS.join(', ')}`,
-                    });
-                }
-            });
-        }),
+        .min(1, 'Must have at least one valid mapping with non-empty "source" and "target" fields'),
     deduplication: z.enum(['email', 'phone']).default('email'),
     onlyVerifiedEmails: z.boolean().default(false),
 });
