@@ -46,10 +46,13 @@ describe('assertDatasetUsable', () => {
         }))).toThrow(/is empty/);
     });
 
-    it('throws when no item carries a leadsEnrichment array', () => {
+    it('accepts a dataset whose items carry NO leadsEnrichment arrays (per-company classification handles it)', () => {
+        // A readable, non-empty dataset with no leads field anywhere is NOT a
+        // run-level crash: every matched company classifies `source_invalid`
+        // and surfaces as a deterministic per-company failure row.
         const evidence = datasetEvidence();
         for (const per of evidence.byUrl.values()) per.leadsEnrichmentPresent = false;
-        expect(() => assertDatasetUsable('ds1', evidence)).toThrow(/no item carries a leadsEnrichment array/);
+        expect(() => assertDatasetUsable('ds1', evidence)).not.toThrow();
     });
 
     it('accepts a dataset with at least one leads field (explicit empty arrays are fine)', () => {

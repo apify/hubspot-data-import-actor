@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CompanyResult } from '../types.js';
-import { RESULT_VERSION_2 } from '../types.js';
+import { RESULT_VERSION_2, isLegacyCompanyRow } from '../types.js';
 import {
     STATE_VERSION_2,
     newMigrationState,
@@ -70,16 +70,66 @@ describe('parseSavedState', () => {
         expect(parseSavedState({ stateVersion: STATE_VERSION_2, completedCompanies: {} })).toBeNull();
     });
 
-    it('converts a legacy v1 record losslessly (completed results + index preserved)', () => {
-        const legacyRow = companyRow();
+    it('converts a REAL legacy v1 record with normalized legacy rows (no fabricated v2 certainty)', () => {
+        // Actual v1 shape: no resultVersion, no failed, no completeness fields.
+        // Its `skipped` may include failed writes — never re-labelled as v2.
+        const legacyRow = {
+            kind: 'company',
+            companyId: 'c1',
+            companyUrl: 'https://example.com',
+            status: 'imported' as const,
+            created: 1,
+            updated: 0,
+            skipped: 2,
+            rowsTotal: 3,
+        };
         const parsed = parseSavedState({
-            results: [legacyRow],
+            results: [legacyRow, { broken: true }], // a malformed row is dropped, not carried
             processedIndex: 1,
         });
 
         expect(parsed?.stateVersion).toBe(STATE_VERSION_2);
         expect(parsed?.nextCompanyIndex).toBe(1);
-        expect(parsed?.completedCompanies).toEqual([legacyRow]);
         expect(parsed?.active).toBeUndefined(); // v1 had no active-company marker
+        expect(parsed?.completedCompanies).toEqual([{
+            kind: 'company',
+            companyId: 'c1',
+            companyUrl: 'https://example.com',
+            status: 'imported',
+            created: 1,
+            updated: 0,
+            skipped: 2,
+            rowsTotal: 3,
+        }]);
+        // The converted row keeps its LEGACY identity — `isLegacyCompanyRow`
+        // stays true so consumers never read it as v2.
+        expect(isLegacyCompanyRow(parsed?.completedCompanies[0])).toBe(true);
+        const row = parsed?.completedCompanies[0] as unknown as Record<string, unknown>;
+        expect(row.resultVersion).toBeUndefined();
+        expect(row.failed).toBeUndefined();
+        expect(row.resultsComplete).toBeUndefined();
+        expect(row.terminalReason).toBeUndefined();
+    });
+
+    it('normalizes non-numeric legacy counters defensively instead of fabricating values', () => {
+        const parsed = parseSavedState({
+            results: [{
+                kind: 'company',
+                companyId: 'c1',
+                companyUrl: 'https://example.com',
+                status: 'imported',
+                created: 'not-a-number',
+                updated: null,
+                skipped: 2,
+                rowsTotal: 3,
+                error: 'search failed',
+            }],
+            processedIndex: 1,
+        });
+        const row = parsed?.completedCompanies[0] as unknown as Record<string, unknown>;
+        expect(row.created).toBe(0);
+        expect(row.updated).toBe(0);
+        expect(row.skipped).toBe(2);
+        expect(row.error).toBe('search failed');
     });
 });

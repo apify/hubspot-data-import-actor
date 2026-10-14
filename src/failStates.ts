@@ -2,8 +2,9 @@
  * Run- and company-level outcome derivation for the import Actor (result v2).
  *
  * Changes from v1:
- *   - the old global "no company matched" and "no verification data" preflight
- *     throws are gone — mismatch and missing verification evidence are
+ *   - the old global "no company matched", "no verification data" and "no
+ *     item carries a leadsEnrichment array" preflight throws are gone —
+ *     mismatch, missing verification evidence and missing lead fields are
  *     per-company classifications (see `source-results.ts`) that surface as
  *     evidence rows instead of crashing before any row is written;
  *   - `deriveCompanyOutcome` replaces `deriveCompanyStatus` as the single
@@ -22,11 +23,15 @@ import type {
 import type { SourceDatasetEvidence, SourceItemEvidence } from './source-results.js';
 
 /**
- * Global dataset usability preflight. A dataset that cannot be read, is
- * empty, or whose items carry no `leadsEnrichment` arrays at all cannot prove
- * a VALID empty enrichment — those are run-level failures, decided BEFORE any
- * company processing. Explicit `leadsEnrichment: []` arrays are fine (a
- * per-company valid-empty classification handles them).
+ * Global dataset usability preflight. A dataset that cannot be read, or is
+ * empty, cannot prove a VALID empty enrichment — those are run-level
+ * failures, decided BEFORE any company processing.
+ *
+ * A dataset whose items carry no `leadsEnrichment` arrays at all is NOT a
+ * run-level failure anymore: it is per-company source evidence, classified
+ * by `classifyCompanySource` (`source_invalid`) and surfaced as deterministic
+ * per-company failure rows — the old global crash discarded evidence before
+ * any row was written.
  */
 export const assertDatasetUsable = (
     datasetId: string,
@@ -39,13 +44,6 @@ export const assertDatasetUsable = (
     if (evidence.totalItems === 0) {
         throw new Error(
             `Dataset "${datasetId}" is empty. A valid empty enrichment cannot be verified from an empty dataset — nothing was imported.`,
-        );
-    }
-
-    const anyLeadsField = [...evidence.byUrl.values()].some((perUrl) => perUrl.leadsEnrichmentPresent);
-    if (!anyLeadsField) {
-        throw new Error(
-            `Dataset "${datasetId}" has ${evidence.totalItems} item(s) but no item carries a leadsEnrichment array. Nothing to import.`,
         );
     }
 };

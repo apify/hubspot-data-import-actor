@@ -95,6 +95,41 @@ export interface CompanyResult extends ContactImportStats {
     source: CompanySourceEvidence;
 }
 
+/**
+ * Legacy (resultVersion 1 / unversioned) company row written by the v1
+ * importer. Its `skipped` MAY include failed writes (v1 collapsed failures
+ * into `skipped`), and it carries no completeness/terminal classification.
+ * Consumers must never relabel its `skipped` as intentional skips, and the
+ * unknown failure split must stay explicit (see `ActorOutput.legacyResultRows`).
+ *
+ * `resultVersion` is declared `?: undefined` as the contract discriminator:
+ * it keeps this type structurally DISJOINT from `CompanyResult` so the
+ * `isLegacyCompanyRow` guard narrows `AnyCompanyRow` correctly.
+ */
+export interface LegacyCompanyResultRow {
+    kind: 'company';
+    /** Absent on legacy rows — the contract discriminator. */
+    resultVersion?: undefined;
+    companyId: string;
+    companyUrl: string;
+    status: CompanyStatus;
+    created: number;
+    updated: number;
+    skipped: number;
+    rowsTotal: number;
+    error?: string;
+}
+
+/** A company row of either contract generation (v2 or legacy v1). */
+export type AnyCompanyRow = CompanyResult | LegacyCompanyResultRow;
+
+/** Narrowing guard: true for legacy (non-v2) company rows. */
+export const isLegacyCompanyRow = (row: unknown): row is LegacyCompanyResultRow =>
+    typeof row === 'object'
+    && row !== null
+    && (row as { kind?: unknown }).kind === 'company'
+    && (row as { resultVersion?: unknown }).resultVersion !== RESULT_VERSION_2;
+
 export type ContactStatus =
     | 'created'
     | 'updated'
@@ -167,11 +202,18 @@ export interface ActorOutput {
     totalFailed: number;
     totalRows: number;
     unmatchedCompanies: string[];
-    results: CompanyResult[];
+    results: AnyCompanyRow[];
     datasetId: string;
     /** False = at least one company's evidence is incomplete. */
     resultsComplete: boolean;
     terminalReason: CompanyTerminalReason;
+    /**
+     * Count of legacy (v1) company rows carried in `results` from a resumed
+     * pre-v2 run. Their `skipped` may include failed writes, so
+     * `totalFailed` does not account for them; presence of any makes the
+     * evidence explicitly incomplete (`resultsComplete: false`).
+     */
+    legacyResultRows?: number;
     startTime: string;
     endTime: string;
     duration: number;
