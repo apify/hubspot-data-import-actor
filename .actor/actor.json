@@ -1,12 +1,13 @@
 {
     "actorSpecification": 1,
     "name": "hubspot-data-import-actor",
-    "title": "HubSpot Company Data Import",
-    "description": "Import data from an Apify dataset into multiple HubSpot company records, matching dataset items to companies via URL.",
+    "title": "HubSpot Contact Import",
+    "description": "Import contacts from an Apify dataset into HubSpot and associate them with HubSpot company records, matching dataset items to companies via URL.",
     "version": "0.0",
     "buildTag": "latest",
     "meta": {
-        "templateId": "js-empty"
+        "templateId": "js-empty",
+        "generatedBy": "OpenCode with GLM"
     },
     "dockerfile": "../Dockerfile",
     "defaultRunOptions": {
@@ -15,22 +16,29 @@
     "storages": {
         "dataset": {
             "actorSpecification": 1,
-            "title": "Import Summary",
-            "description": "Summary of the HubSpot import operation",
+            "title": "Import Results",
+            "description": "Per-company result rows and per-contact write details (kind = 'company' / 'contact', resultVersion 2)",
             "views": {
                 "companies": {
                     "title": "Companies",
-                    "description": "Per-company import summary rows (kind = 'company')",
+                    "description": "Per-company result rows (kind = 'company') with outcome, counts and completeness",
                     "transformation": {
                         "fields": [
                             "kind",
+                            "resultVersion",
+                            "resultId",
+                            "companyIndex",
                             "companyId",
                             "companyUrl",
                             "status",
+                            "outcome",
                             "created",
                             "updated",
                             "skipped",
+                            "failed",
                             "rowsTotal",
+                            "resultsComplete",
+                            "terminalReason",
                             "error"
                         ]
                     },
@@ -44,11 +52,15 @@
                     "transformation": {
                         "fields": [
                             "kind",
+                            "resultVersion",
+                            "resultId",
+                            "sourceIndex",
                             "companyId",
                             "displayName",
                             "identifier",
                             "status",
-                            "propertiesWritten"
+                            "propertiesWritten",
+                            "errorMessage"
                         ]
                     },
                     "display": {

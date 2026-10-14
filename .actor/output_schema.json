@@ -1,18 +1,18 @@
 {
     "actorOutputSchemaVersion": 1,
-    "title": "HubSpot Import Results",
-    "description": "Output from the HubSpot company data import operation",
+    "title": "HubSpot Contact Import Results",
+    "description": "Output from the HubSpot contact import operation (resultVersion 2: separate failed/skipped counts, explicit completeness, per-company source evidence)",
     "properties": {
         "results": {
             "type": "string",
             "title": "Per-company Results",
-            "description": "Individual import result for each company",
+            "description": "Result row for each company (outcome, created/updated/skipped/failed counts, completeness)",
             "template": "{{links.apiDefaultDatasetUrl}}/items"
         },
         "summary": {
             "type": "string",
             "title": "Import Summary",
-            "description": "Overall import summary with totals and counts",
+            "description": "Run-level import summary with totals, counts, completeness and terminal reason",
             "template": "{{links.apiDefaultKeyValueStoreUrl}}/records/OUTPUT"
         }
     }
