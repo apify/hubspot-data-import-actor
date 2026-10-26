@@ -18,7 +18,7 @@
         },
         "importMode": {
             "title": "Import mode",
-            "description": "Only 'contacts' is supported. Each dataset item's leadsEnrichment[] rows are imported as HubSpot contacts and associated with the mapped company.",
+            "description": "Only 'contacts' is supported. Each dataset item's leadsEnrichment[] rows are imported as HubSpot contacts.",
             "type": "string",
             "editor": "select",
             "enum": ["contacts"],
@@ -26,7 +26,7 @@
         },
         "companyUrlMapping": {
             "title": "Company URL to HubSpot ID mapping",
-            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field and leads are associated with the mapped company. An explicit empty leadsEnrichment array is a valid no-results outcome; a missing array or malformed rows are reported as source errors.",
+            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field and leads are associated to the matched company.",
             "type": "array",
             "editor": "schemaBased",
             "items": {
@@ -84,7 +84,7 @@
         },
         "deduplication": {
             "title": "Deduplication key",
-            "description": "Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped (an intentional skip, not a failure).",
+            "description": "Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped.",
             "type": "string",
             "editor": "select",
             "enum": ["email", "phone"],

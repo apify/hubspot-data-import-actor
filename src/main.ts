@@ -1,34 +1,239 @@
 import { Actor, log } from 'apify';
+import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
+import { validateInput, LeadsEnrichmentRowSchema } from './validation.js';
+import { findDeadSources, normalizeUrl } from './utils.js';
+import { processCompanyLeads } from './contacts.js';
+import { HubspotAuthError } from './api.js';
+import {
+    assertSomeCompaniesMatch,
+    assertSomeWritesSucceeded,
+    assertVerificationDataPresent,
+    deriveCompanyStatus,
+} from './failStates.js';
 
-import { validateInput } from './validation.js';
-import { runImport } from './orchestration.js';
+const STATE_KEY = 'MIGRATION_STATE';
+
+interface MigrationState {
+    results: CompanyResult[];
+    processedIndex: number;
+}
+
+const emptyStats = (rowsTotal = 0, error?: string): ContactImportStats => ({
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    rowsTotal,
+    ...(error ? { error } : {}),
+});
 
 await Actor.init();
 
+const startTime = new Date();
+
 try {
-    const input = validateInput(await Actor.getInput());
+    const input = await Actor.getInput();
+    const {
+        hubspotAccessToken,
+        datasetId,
+        companyUrlMapping,
+        dataMappings,
+        deduplication,
+        onlyVerifiedEmails,
+    } = validateInput(input);
 
+    const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
+
+    // Restore state from previous migration if available
     const store = await Actor.openKeyValueStore();
-    const dataset = await Actor.openDataset(input.datasetId);
+    const savedState = await store.getValue<MigrationState>(STATE_KEY);
+    const results: CompanyResult[] = savedState?.results ?? [];
+    let startIndex = savedState?.processedIndex ?? 0;
 
-    await runImport({
-        input,
-        kv: {
-            get: (key) => store.getValue(key),
-            set: (key, value) => store.setValue(key, value),
-        },
-        dataset,
-        pushData: (rows) => Actor.pushData(rows),
-        setOutput: (output) => Actor.setValue('OUTPUT', output),
-        onPersistEvent: (handler) => {
-            Actor.on('migrating', () => {
-                log.info('Migration event received, persisting state...');
-                return handler();
-            });
-            Actor.on('persistState', () => handler());
-        },
-        failRun: (message) => Actor.fail(message),
-        now: () => new Date(),
+    if (startIndex > 0) {
+        log.info(`Resuming from company index ${startIndex} (${results.length} results from previous run)`);
+    }
+
+    Actor.on('migrating', async () => {
+        log.info('Migration event received, persisting state...');
+        await store.setValue(STATE_KEY, { results, processedIndex: startIndex } satisfies MigrationState);
+    });
+
+    log.info(`Starting leads-contact import for ${companyUrlMapping.length} companies from dataset ${datasetId}`);
+
+    log.info('Fetching dataset items...');
+    const dataset = await Actor.openDataset(datasetId);
+    // Memory: only retain the `leadsEnrichment` arrays keyed by normalized URL.
+    // Enrichment dataset items can carry large payloads (SERP results, scraped HTML, etc.)
+    // we never use here; dropping them keeps the actor's memory bounded by leads count.
+    const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>();
+    // URLs whose item has no leadsEnrichment array at all (vs an explicit `[]`, which is a valid no-results item).
+    const invalidSourceUrls = new Set<string>();
+    const PAGE_SIZE = 50;
+    let offset = 0;
+    let totalItems = 0;
+
+    while (true) {
+        const { items } = await dataset.getData({ offset, limit: PAGE_SIZE });
+        if (!items || items.length === 0) break;
+
+        for (const item of items) {
+            const url = item.originalStartUrl;
+            if (typeof url !== 'string' || !url) continue;
+            const key = normalizeUrl(url);
+            if (!Array.isArray(item.leadsEnrichment)) invalidSourceUrls.add(key);
+            const raw = Array.isArray(item.leadsEnrichment) ? item.leadsEnrichment : [];
+            const leads: LeadsEnrichmentRow[] = [];
+            for (const row of raw) {
+                const parsed = LeadsEnrichmentRowSchema.safeParse(row);
+                if (!parsed.success) {
+                    log.warning(`Skipping malformed leadsEnrichment row — ${parsed.error.message}`);
+                } else {
+                    leads.push(parsed.data);
+                }
+            }
+            const existing = leadsByUrl.get(key);
+            if (existing) existing.push(...leads);
+            else leadsByUrl.set(key, leads);
+        }
+
+        totalItems += items.length;
+        offset += items.length;
+        if (items.length < PAGE_SIZE) break;
+    }
+
+    if (totalItems === 0) {
+        throw new Error(`Dataset "${datasetId}" is empty. Please provide a dataset with at least one item.`);
+    }
+
+    log.info(`Fetched ${totalItems} items from dataset, mapped ${leadsByUrl.size} unique URLs`);
+
+    assertSomeCompaniesMatch(companyUrlMapping, leadsByUrl);
+    assertVerificationDataPresent(onlyVerifiedEmails, leadsByUrl);
+
+    // With no source whitelist, a typo'd mapping source is silently skipped on every
+    // row — surface it once per run rather than per row or per company.
+    const allLeads = [...leadsByUrl.values()].flat() as Record<string, unknown>[];
+    const deadSources = findDeadSources(allLeads, cleanedMappings.map((m) => m.source));
+    if (deadSources.length > 0) {
+        log.warning(`Mapping sources resolved on no dataset row — check for typos: ${deadSources.map((s) => `"${s}"`).join(', ')}`);
+    }
+
+    const unmatchedCompanies: string[] = [];
+
+    for (let i = startIndex; i < companyUrlMapping.length; i++) {
+        const { url: companyUrl, companyId } = companyUrlMapping[i];
+
+        let stats: ContactImportStats;
+        let status: CompanyResult['status'] = 'imported';
+        let contacts: ContactResult[] = [];
+
+        if (!companyUrl?.trim()) {
+            log.info(`Skipping company ${companyId}: no company URL provided`);
+            stats = emptyStats(0, 'No company URL provided');
+            status = 'skipped';
+        } else {
+            const normalizedCompanyUrl = normalizeUrl(companyUrl);
+            const leads = leadsByUrl.get(normalizedCompanyUrl);
+
+            if (!leads) {
+                log.warning(`No dataset item found for company ${companyId} (URL: ${companyUrl})`);
+                unmatchedCompanies.push(companyUrl);
+                stats = emptyStats(0, 'No matching dataset item found');
+                status = 'failed';
+            } else if (leads.length === 0 && invalidSourceUrls.has(normalizedCompanyUrl)) {
+                log.warning(`Company ${companyId}: matched dataset item has no leadsEnrichment array`);
+                stats = emptyStats(0, 'Source data invalid: dataset item is missing leadsEnrichment');
+                status = 'failed';
+            } else {
+                if (leads.length === 0) {
+                    log.info(`Company ${companyId}: matched item has no leadsEnrichment rows`);
+                    stats = emptyStats(0);
+                    status = 'imported';
+                } else {
+                    log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
+                    let processed;
+                    try {
+                        processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, onlyVerifiedEmails);
+                    } catch (err) {
+                        // Persist the contacts already written for this company before the run fails.
+                        if (err instanceof HubspotAuthError && err.partial) {
+                            const { stats: partialStats, contacts: partialContacts } = err.partial;
+                            await Actor.pushData([...partialContacts, {
+                                kind: 'company',
+                                companyId,
+                                companyUrl,
+                                status: deriveCompanyStatus(partialStats),
+                                ...partialStats,
+                            } satisfies CompanyResult]);
+                        }
+                        throw err;
+                    }
+                    stats = processed.stats;
+                    contacts = processed.contacts;
+                    status = deriveCompanyStatus(stats);
+                }
+            }
+        }
+
+        const companyRow: CompanyResult = {
+            kind: 'company',
+            companyId,
+            companyUrl: companyUrl ?? '',
+            status,
+            ...stats,
+        };
+        results.push(companyRow);
+
+        // Push the per-contact rows alongside the company-summary row so the dataset
+        // is the literal record of the enrichment. We push per-iteration (rather than
+        // once at the end) so partial progress survives migration; processedIndex
+        // already delimits "everything up to here is in the dataset".
+        await Actor.pushData([...contacts, companyRow]);
+
+        startIndex = i + 1;
+    }
+
+    const endTime = new Date();
+    const duration = (endTime.getTime() - startTime.getTime()) / 1000;
+
+    const totalCreated = results.reduce((sum, r) => sum + r.created, 0);
+    const totalUpdated = results.reduce((sum, r) => sum + r.updated, 0);
+    const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
+    const totalFailed = results.reduce((sum, r) => sum + r.failed, 0);
+    const totalRows = results.reduce((sum, r) => sum + r.rowsTotal, 0);
+
+    const anyCompanyHadError = results.some((r) => r.error != null || r.failed > 0);
+    assertSomeWritesSucceeded({ totalCreated, totalUpdated, totalFailed, anyCompanyHadError });
+
+    const output: ActorOutput = {
+        totalCompanies: companyUrlMapping.length,
+        totalCreated,
+        totalUpdated,
+        totalSkipped,
+        totalFailed,
+        totalRows,
+        unmatchedCompanies,
+        results,
+        datasetId,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        duration,
+    };
+
+    await Actor.setValue('OUTPUT', output);
+
+    await store.setValue(STATE_KEY, null);
+
+    log.info('Leads-contact import complete!', {
+        totalCompanies: companyUrlMapping.length,
+        totalCreated,
+        totalUpdated,
+        totalSkipped,
+        totalFailed,
+        totalRows,
+        unmatchedCount: unmatchedCompanies.length,
+        duration,
     });
 } catch (err) {
     log.error('Import failed', {

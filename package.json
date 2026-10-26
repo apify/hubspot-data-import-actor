@@ -2,7 +2,7 @@
     "name": "hubspot-data-import-actor",
     "version": "0.0.1",
     "type": "module",
-    "description": "Apify Actor for importing contact leads from Apify datasets into HubSpot and associating them with company records.",
+    "description": "Apify Actor for importing data from Apify datasets to HubSpot company properties.",
     "engines": {
         "node": ">=18.0.0"
     },
