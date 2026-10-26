@@ -1,34 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type { CompanyUrlMapping, ContactImportStats, LeadsEnrichmentRow } from '../types.js';
 import {
-    assertDatasetHasLeads,
     assertSomeCompaniesMatch,
     assertSomeWritesSucceeded,
     assertVerificationDataPresent,
     deriveCompanyStatus,
 } from '../failStates.js';
-
-describe('assertDatasetHasLeads', () => {
-    it('throws when all dataset items have empty leadsEnrichment arrays', () => {
-        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
-            ['example.com', []],
-            ['foo.com', []],
-        ]);
-        expect(() => assertDatasetHasLeads('ds1', 2, leadsByUrl)).toThrow(/no leadsEnrichment rows/);
-    });
-
-    it('throws when the map is empty', () => {
-        expect(() => assertDatasetHasLeads('ds1', 3, new Map())).toThrow(/no leadsEnrichment rows/);
-    });
-
-    it('does not throw when at least one URL has leads', () => {
-        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
-            ['example.com', []],
-            ['foo.com', [{ email: 'a@b.com' }]],
-        ]);
-        expect(() => assertDatasetHasLeads('ds1', 2, leadsByUrl)).not.toThrow();
-    });
-});
 
 describe('assertSomeCompaniesMatch', () => {
     const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
@@ -63,38 +40,44 @@ describe('assertSomeCompaniesMatch', () => {
 describe('assertSomeWritesSucceeded', () => {
     it('throws when nothing was written and at least one company had an error', () => {
         expect(() => assertSomeWritesSucceeded({
-            totalCreated: 0, totalUpdated: 0, anyCompanyHadError: true,
+            totalCreated: 0, totalUpdated: 0, totalFailed: 0, anyCompanyHadError: true,
         })).toThrow(/All lead writes failed/);
     });
 
     it('does not throw when at least one write succeeded', () => {
         expect(() => assertSomeWritesSucceeded({
-            totalCreated: 1, totalUpdated: 0, anyCompanyHadError: true,
+            totalCreated: 1, totalUpdated: 0, totalFailed: 0, anyCompanyHadError: true,
         })).not.toThrow();
         expect(() => assertSomeWritesSucceeded({
-            totalCreated: 0, totalUpdated: 1, anyCompanyHadError: true,
+            totalCreated: 0, totalUpdated: 1, totalFailed: 0, anyCompanyHadError: true,
         })).not.toThrow();
+    });
+
+    it('throws when nothing was written and some contact writes failed', () => {
+        expect(() => assertSomeWritesSucceeded({
+            totalCreated: 0, totalUpdated: 0, totalFailed: 2, anyCompanyHadError: false,
+        })).toThrow(/2 failed/);
     });
 
     it('does not throw when zero writes but no errors (e.g. every row had no email)', () => {
         expect(() => assertSomeWritesSucceeded({
-            totalCreated: 0, totalUpdated: 0, anyCompanyHadError: false,
+            totalCreated: 0, totalUpdated: 0, totalFailed: 0, anyCompanyHadError: false,
         })).not.toThrow();
     });
 });
 
 describe('deriveCompanyStatus', () => {
     const base = (over: Partial<ContactImportStats> = {}): ContactImportStats => ({
-        created: 0, updated: 0, skipped: 0, rowsTotal: 0, ...over,
+        created: 0, updated: 0, skipped: 0, failed: 0, rowsTotal: 0, ...over,
     });
 
     it('returns "failed" when every row errored and nothing was written', () => {
-        expect(deriveCompanyStatus(base({ rowsTotal: 2, skipped: 2, error: 'boom' }))).toBe('failed');
+        expect(deriveCompanyStatus(base({ rowsTotal: 2, failed: 2, error: 'boom' }))).toBe('failed');
     });
 
     it('returns "imported" when some writes succeeded, even with errors', () => {
-        expect(deriveCompanyStatus(base({ rowsTotal: 2, created: 1, skipped: 1, error: 'boom' }))).toBe('imported');
-        expect(deriveCompanyStatus(base({ rowsTotal: 2, updated: 1, skipped: 1, error: 'boom' }))).toBe('imported');
+        expect(deriveCompanyStatus(base({ rowsTotal: 2, created: 1, failed: 1, error: 'boom' }))).toBe('imported');
+        expect(deriveCompanyStatus(base({ rowsTotal: 2, updated: 1, failed: 1, error: 'boom' }))).toBe('imported');
     });
 
     it('returns "imported" when rowsTotal is 0 (nothing to do is not a failure)', () => {
@@ -135,7 +118,12 @@ describe('assertVerificationDataPresent', () => {
         expect(() => assertVerificationDataPresent(true, leadsByUrl)).not.toThrow();
     });
 
-    it('throws when flag is on and map is empty (no leads is no verification)', () => {
-        expect(() => assertVerificationDataPresent(true, new Map())).toThrow(/emailVerification/);
+    it('does not throw when flag is on but no lead has an email (no-results run)', () => {
+        const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>([
+            ['example.com', []],
+            ['foo.com', [{ firstName: 'NoEmail', email: ' ' }]],
+        ]);
+        expect(() => assertVerificationDataPresent(true, leadsByUrl)).not.toThrow();
+        expect(() => assertVerificationDataPresent(true, new Map())).not.toThrow();
     });
 });

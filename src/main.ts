@@ -3,8 +3,8 @@ import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, Lea
 import { validateInput, LeadsEnrichmentRowSchema } from './validation.js';
 import { findDeadSources, normalizeUrl } from './utils.js';
 import { processCompanyLeads } from './contacts.js';
+import { HubspotAuthError } from './api.js';
 import {
-    assertDatasetHasLeads,
     assertSomeCompaniesMatch,
     assertSomeWritesSucceeded,
     assertVerificationDataPresent,
@@ -22,6 +22,7 @@ const emptyStats = (rowsTotal = 0, error?: string): ContactImportStats => ({
     created: 0,
     updated: 0,
     skipped: 0,
+    failed: 0,
     rowsTotal,
     ...(error ? { error } : {}),
 });
@@ -66,6 +67,8 @@ try {
     // Enrichment dataset items can carry large payloads (SERP results, scraped HTML, etc.)
     // we never use here; dropping them keeps the actor's memory bounded by leads count.
     const leadsByUrl = new Map<string, LeadsEnrichmentRow[]>();
+    // URLs whose item has no leadsEnrichment array at all (vs an explicit `[]`, which is a valid no-results item).
+    const invalidSourceUrls = new Set<string>();
     const PAGE_SIZE = 50;
     let offset = 0;
     let totalItems = 0;
@@ -78,6 +81,7 @@ try {
             const url = item.originalStartUrl;
             if (typeof url !== 'string' || !url) continue;
             const key = normalizeUrl(url);
+            if (!Array.isArray(item.leadsEnrichment)) invalidSourceUrls.add(key);
             const raw = Array.isArray(item.leadsEnrichment) ? item.leadsEnrichment : [];
             const leads: LeadsEnrichmentRow[] = [];
             for (const row of raw) {
@@ -104,7 +108,6 @@ try {
 
     log.info(`Fetched ${totalItems} items from dataset, mapped ${leadsByUrl.size} unique URLs`);
 
-    assertDatasetHasLeads(datasetId, totalItems, leadsByUrl);
     assertSomeCompaniesMatch(companyUrlMapping, leadsByUrl);
     assertVerificationDataPresent(onlyVerifiedEmails, leadsByUrl);
 
@@ -138,6 +141,10 @@ try {
                 unmatchedCompanies.push(companyUrl);
                 stats = emptyStats(0, 'No matching dataset item found');
                 status = 'failed';
+            } else if (leads.length === 0 && invalidSourceUrls.has(normalizedCompanyUrl)) {
+                log.warning(`Company ${companyId}: matched dataset item has no leadsEnrichment array`);
+                stats = emptyStats(0, 'Source data invalid: dataset item is missing leadsEnrichment');
+                status = 'failed';
             } else {
                 if (leads.length === 0) {
                     log.info(`Company ${companyId}: matched item has no leadsEnrichment rows`);
@@ -145,7 +152,23 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, onlyVerifiedEmails);
+                    let processed;
+                    try {
+                        processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, onlyVerifiedEmails);
+                    } catch (err) {
+                        // Persist the contacts already written for this company before the run fails.
+                        if (err instanceof HubspotAuthError && err.partial) {
+                            const { stats: partialStats, contacts: partialContacts } = err.partial;
+                            await Actor.pushData([...partialContacts, {
+                                kind: 'company',
+                                companyId,
+                                companyUrl,
+                                status: deriveCompanyStatus(partialStats),
+                                ...partialStats,
+                            } satisfies CompanyResult]);
+                        }
+                        throw err;
+                    }
                     stats = processed.stats;
                     contacts = processed.contacts;
                     status = deriveCompanyStatus(stats);
@@ -177,16 +200,18 @@ try {
     const totalCreated = results.reduce((sum, r) => sum + r.created, 0);
     const totalUpdated = results.reduce((sum, r) => sum + r.updated, 0);
     const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
+    const totalFailed = results.reduce((sum, r) => sum + r.failed, 0);
     const totalRows = results.reduce((sum, r) => sum + r.rowsTotal, 0);
 
-    const anyCompanyHadError = results.some((r) => r.error != null);
-    assertSomeWritesSucceeded({ totalCreated, totalUpdated, anyCompanyHadError });
+    const anyCompanyHadError = results.some((r) => r.error != null || r.failed > 0);
+    assertSomeWritesSucceeded({ totalCreated, totalUpdated, totalFailed, anyCompanyHadError });
 
     const output: ActorOutput = {
         totalCompanies: companyUrlMapping.length,
         totalCreated,
         totalUpdated,
         totalSkipped,
+        totalFailed,
         totalRows,
         unmatchedCompanies,
         results,
@@ -205,6 +230,7 @@ try {
         totalCreated,
         totalUpdated,
         totalSkipped,
+        totalFailed,
         totalRows,
         unmatchedCount: unmatchedCompanies.length,
         duration,

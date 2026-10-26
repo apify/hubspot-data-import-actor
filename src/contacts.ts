@@ -44,6 +44,7 @@ export const processCompanyLeads = async (
         created: 0,
         updated: 0,
         skipped: 0,
+        failed: 0,
         rowsTotal: leadsEnrichment.length,
     };
     const contacts: ContactResult[] = [];
@@ -68,6 +69,11 @@ export const processCompanyLeads = async (
             propertiesWritten,
             ...(errorMessage ? { errorMessage } : {}),
         });
+    };
+
+    const withPartial = (err: HubspotAuthError): HubspotAuthError => {
+        err.partial = { stats, contacts };
+        return err;
     };
 
     const skipTargets = dataMappings
@@ -126,12 +132,12 @@ export const processCompanyLeads = async (
                 writtenKeys = Object.keys(properties);
             }
         } catch (err) {
-            if (err instanceof HubspotAuthError) throw err;
             const message = err instanceof Error ? err.message : String(err);
-            log.warning(`Contact write failed for ${dedupValue} (company ${companyId}): ${message}`);
-            stats.skipped++;
+            stats.failed++;
             recordError(message);
             pushResult(lead, 'failed', dedupValue, [], message);
+            if (err instanceof HubspotAuthError) throw withPartial(err);
+            log.warning(`Contact write failed for ${dedupValue} (company ${companyId}): ${message}`);
             continue;
         }
 
@@ -139,13 +145,13 @@ export const processCompanyLeads = async (
             await associateContactToCompany(token, contactId, companyId);
             pushResult(lead, writeStatus, dedupValue, writtenKeys);
         } catch (err) {
-            if (err instanceof HubspotAuthError) throw err;
             const message = err instanceof Error ? err.message : String(err);
-            log.warning(`Association failed for contact ${contactId} → company ${companyId}: ${message}`);
             recordError(message);
             // Contact write succeeded but association did not. Surface the association
             // error on the contact's row without flipping its write status.
             pushResult(lead, writeStatus, dedupValue, writtenKeys, `Association failed: ${message}`);
+            if (err instanceof HubspotAuthError) throw withPartial(err);
+            log.warning(`Association failed for contact ${contactId} → company ${companyId}: ${message}`);
         }
     }
 

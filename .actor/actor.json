@@ -30,6 +30,7 @@
                             "created",
                             "updated",
                             "skipped",
+                            "failed",
                             "rowsTotal",
                             "error"
                         ]

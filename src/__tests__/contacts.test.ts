@@ -34,7 +34,7 @@ describe('processCompanyLeads', () => {
     it('skips leads without an email and does not call HubSpot', async () => {
         const leads: LeadsEnrichmentRow[] = [{ firstName: 'No', lastName: 'Email' }];
         const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+        expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
         expect(searchByEmail).not.toHaveBeenCalled();
     });
 
@@ -45,7 +45,7 @@ describe('processCompanyLeads', () => {
             { email: 'jane@example.com', firstName: 'Jane', lastName: 'Doe' },
         ];
         const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+        expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, failed: 0, rowsTotal: 1 });
         expect(create).toHaveBeenCalledWith('tok', { email: 'jane@example.com', firstname: 'Jane', lastname: 'Doe' });
         expect(associate).toHaveBeenCalledWith('tok', 'contact-new', 'c1');
     });
@@ -56,7 +56,7 @@ describe('processCompanyLeads', () => {
             { email: 'jane@example.com', firstName: 'Jane', mobileNumber: '+1' },
         ];
         const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+        expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, failed: 0, rowsTotal: 1 });
         expect(update).toHaveBeenCalledWith('tok', 'contact-123', {
             email: 'jane@example.com', firstname: 'Jane', phone: '+1',
         });
@@ -74,28 +74,49 @@ describe('processCompanyLeads', () => {
         expect(stats.error).toContain('500');
     });
 
-    it('counts row as skipped and captures error when search fails', async () => {
+    it('counts row as failed (not skipped) and captures error when search fails', async () => {
         searchByEmail.mockRejectedValueOnce(new HubspotApiError(500, 'server down', '/search'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
         const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toMatchObject({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+        expect(stats).toMatchObject({ created: 0, updated: 0, skipped: 0, failed: 1, rowsTotal: 1 });
         expect(stats.error).toContain('500');
     });
 
-    it('propagates HubspotAuthError from search (does not count as skipped)', async () => {
-        searchByEmail.mockRejectedValueOnce(new HubspotAuthError('/search', 'invalid token'));
-        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
-            .rejects.toBeInstanceOf(HubspotAuthError);
+    it('continues with later leads after an ordinary write failure', async () => {
+        searchByEmail.mockRejectedValueOnce(new HubspotApiError(500, 'server down', '/search'));
+        create.mockResolvedValueOnce('c-2');
+        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }, { email: 'c@d.com' }];
+        const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
+        expect(stats).toMatchObject({ created: 1, updated: 0, skipped: 0, failed: 1, rowsTotal: 2 });
+        expect(contacts.map((c) => c.status)).toEqual(['failed', 'created']);
     });
 
-    it('propagates HubspotAuthError from association', async () => {
+    it('propagates HubspotAuthError from search with partial progress attached', async () => {
+        create.mockResolvedValueOnce('c-1');
+        searchByEmail
+            .mockResolvedValueOnce(null)
+            .mockRejectedValueOnce(new HubspotAuthError('/search', 'invalid token'));
+        const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }, { email: 'c@d.com' }, { email: 'e@f.com' }];
+        const err = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email').catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(HubspotAuthError);
+        const { partial } = err as HubspotAuthError;
+        expect(partial?.stats).toMatchObject({ created: 1, skipped: 0, failed: 1, rowsTotal: 3 });
+        expect(partial?.stats.error).toContain('401');
+        expect(partial?.contacts.map((c) => c.status)).toEqual(['created', 'failed']);
+        expect(searchByEmail).toHaveBeenCalledTimes(2);
+    });
+
+    it('propagates HubspotAuthError from association with the written contact in partial progress', async () => {
         searchByEmail.mockResolvedValueOnce(null);
         create.mockResolvedValueOnce('c-new');
         associate.mockRejectedValueOnce(new HubspotAuthError('/assoc', 'invalid token'));
         const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-        await expect(processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email'))
-            .rejects.toBeInstanceOf(HubspotAuthError);
+        const err = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email').catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(HubspotAuthError);
+        const { partial } = err as HubspotAuthError;
+        expect(partial?.stats).toMatchObject({ created: 1, failed: 0 });
+        expect(partial?.contacts[0]).toMatchObject({ status: 'created', identifier: 'a@b.com' });
+        expect(partial?.contacts[0].errorMessage).toContain('Association failed');
     });
 
     it('processes a mix of skip/create/update rows', async () => {
@@ -109,7 +130,7 @@ describe('processCompanyLeads', () => {
             { email: 'c@d.com', firstName: 'C' },
         ];
         const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email');
-        expect(stats).toEqual({ created: 1, updated: 1, skipped: 1, rowsTotal: 3 });
+        expect(stats).toEqual({ created: 1, updated: 1, skipped: 1, failed: 0, rowsTotal: 3 });
     });
 
     describe('per-mapping overwrite/skip', () => {
@@ -127,7 +148,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'Jane', jobTitle: 'New Title' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
-            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, failed: 0, rowsTotal: 1 });
             expect(searchByEmail).toHaveBeenCalledWith('tok', 'a@b.com', ['jobtitle']);
             expect(update).toHaveBeenCalledWith('tok', 'c-123', { email: 'a@b.com', firstname: 'Jane' });
         });
@@ -145,7 +166,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', jobTitle: 'New Title' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
-            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, failed: 0, rowsTotal: 1 });
         });
 
         it('still creates a new contact with all fields when no match is found, regardless of skip flags', async () => {
@@ -159,7 +180,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', jobTitle: 'New Title' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
-            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, failed: 0, rowsTotal: 1 });
             expect(create).toHaveBeenCalledWith('tok', { email: 'a@b.com', jobtitle: 'New Title' });
         });
 
@@ -176,7 +197,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'Jane' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
-            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
             expect(update).not.toHaveBeenCalled();
             expect(associate).toHaveBeenCalledWith('tok', 'c-123', 'c1');
         });
@@ -188,7 +209,7 @@ describe('processCompanyLeads', () => {
                 { email: 'has@email.com', firstName: 'NoPhone' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
-            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
             expect(searchByPhone).not.toHaveBeenCalled();
         });
 
@@ -199,7 +220,7 @@ describe('processCompanyLeads', () => {
                 { mobileNumber: '+15551234567', firstName: 'Jane' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
-            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, failed: 0, rowsTotal: 1 });
             expect(searchByPhone).toHaveBeenCalledWith('tok', '+15551234567', []);
             expect(create).toHaveBeenCalledWith('tok', { phone: '+15551234567', firstname: 'Jane' });
             expect(associate).toHaveBeenCalledWith('tok', 'c-phone-new', 'c1');
@@ -211,7 +232,7 @@ describe('processCompanyLeads', () => {
                 { mobileNumber: '+15551234567', firstName: 'Jane' },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone');
-            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 1, skipped: 0, failed: 0, rowsTotal: 1 });
             expect(update).toHaveBeenCalledWith('tok', 'c-phone-existing', expect.any(Object));
         });
     });
@@ -340,7 +361,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'Verified', emailVerification: { result: 'ok' } },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
-            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, failed: 0, rowsTotal: 1 });
         });
 
         it('skips lead when emailVerification result is not ok', async () => {
@@ -348,7 +369,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'Bad', emailVerification: { result: 'invalid' } },
             ];
             const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
-            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
             expect(searchByEmail).not.toHaveBeenCalled();
             expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
         });
@@ -358,7 +379,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'NoVerification' },
             ];
             const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', true);
-            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
             expect(searchByEmail).not.toHaveBeenCalled();
             expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
         });
@@ -370,7 +391,7 @@ describe('processCompanyLeads', () => {
                 { email: 'a@b.com', firstName: 'Unverified', emailVerification: { result: 'invalid' } },
             ];
             const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', false);
-            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 1, updated: 0, skipped: 0, failed: 0, rowsTotal: 1 });
         });
 
         it('applies the filter when deduplication is phone (filter is dedup-mode independent)', async () => {
@@ -379,7 +400,7 @@ describe('processCompanyLeads', () => {
                 { mobileNumber: '+123', firstName: 'Bad', emailVerification: { result: 'invalid' } },
             ];
             const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'phone', true);
-            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
             expect(searchByPhone).not.toHaveBeenCalled();
             expect(contacts[0]).toMatchObject({ status: 'skipped_unverified_email', identifier: '', propertiesWritten: [] });
         });
