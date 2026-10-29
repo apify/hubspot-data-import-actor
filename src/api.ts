@@ -153,3 +153,63 @@ export const associateContactToCompany = async (
         translateError(err, path);
     }
 };
+
+// --- Company writes (importMode: 'company') ---
+
+export const COMPANY_BATCH_SIZE = 100;
+
+/**
+ * Batch-reads the given properties for up to COMPANY_BATCH_SIZE companies.
+ * Companies HubSpot can't find are simply absent from the returned map.
+ */
+export const batchReadCompanies = async (
+    token: string,
+    companyIds: string[],
+    properties: string[],
+): Promise<Map<string, Record<string, unknown>>> => {
+    const client = getClient(token);
+    try {
+        const response = await client.crm.companies.batchApi.read({
+            inputs: companyIds.map((id) => ({ id })),
+            properties,
+            propertiesWithHistory: [],
+        });
+        const out = new Map<string, Record<string, unknown>>();
+        for (const result of response.results ?? []) {
+            if (result.id) out.set(result.id, result.properties ?? {});
+        }
+        return out;
+    } catch (err) {
+        return translateError(err, '/crm/v3/objects/companies/batch/read');
+    }
+};
+
+/**
+ * Batch-updates up to COMPANY_BATCH_SIZE companies. Returns the ids HubSpot
+ * reports as updated; callers retry the rest one by one to attribute errors.
+ */
+export const batchUpdateCompanies = async (
+    token: string,
+    updates: { id: string; properties: Record<string, string> }[],
+): Promise<Set<string>> => {
+    const client = getClient(token);
+    try {
+        const response = await client.crm.companies.batchApi.update({ inputs: updates });
+        return new Set((response.results ?? []).map((r) => r.id).filter((id): id is string => Boolean(id)));
+    } catch (err) {
+        return translateError(err, '/crm/v3/objects/companies/batch/update');
+    }
+};
+
+export const updateCompany = async (
+    token: string,
+    companyId: string,
+    properties: Record<string, string>,
+): Promise<void> => {
+    const client = getClient(token);
+    try {
+        await client.crm.companies.basicApi.update(companyId, { properties });
+    } catch (err) {
+        translateError(err, `/crm/v3/objects/companies/${companyId}`);
+    }
+};

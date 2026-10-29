@@ -55,7 +55,9 @@ const DataMappingSchema = z.object({
 export const ActorInputSchema = z.object({
     hubspotAccessToken: nonEmptyString.describe('HubSpot access token (private app token or OAuth access token)'),
     datasetId: nonEmptyString.describe('Apify dataset ID to import from'),
-    importMode: z.literal('contacts').describe('Import mode — only "contacts" is supported'),
+    importMode: z
+        .enum(['contacts', 'company'])
+        .describe('"contacts" imports leadsEnrichment[] rows as contacts; "company" writes scraped contact details onto the company'),
     companyUrlMapping: z
         .array(z.object({ url: z.string().optional(), companyId: nonEmptyString }))
         .min(1, 'Must have at least one company to HubSpot ID mapping'),
