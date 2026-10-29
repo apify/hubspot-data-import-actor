@@ -134,6 +134,13 @@ const REJECTED_SEGMENTS = new Set([
     'ads',
 ]);
 
+// First path segments that are a post, feed or app page rather than a profile handle.
+const RESERVED_FIRST_SEGMENTS: Partial<Record<SocialPlatform, Set<string>>> = {
+    instagram: new Set(['p', 'reel', 'reels', 'tv', 'explore', 'stories']),
+    x: new Set(['i', 'home', 'search', 'hashtag']),
+    facebook: new Set(['watch', 'events', 'groups', 'photo.php', 'story.php', 'permalink.php', 'hashtag', 'people']),
+};
+
 /** Returns a canonical profile URL for the platform, or null when the URL isn't a company profile. */
 export const cleanSocialUrl = (platform: SocialPlatform, raw: string): string | null => {
     const url = parseUrl(raw);
@@ -146,15 +153,27 @@ export const cleanSocialUrl = (platform: SocialPlatform, raw: string): string | 
     if (segments.length === 0) return null;
     const lower = segments.map((s) => s.toLowerCase());
     if (lower.some((s) => REJECTED_SEGMENTS.has(s))) return null;
-
-    let path = segments;
-    if (platform === 'linkedin') {
-        if (!['company', 'school'].includes(lower[0]) || segments.length < 2) return null;
-        path = segments.slice(0, 2);
-    }
+    if (RESERVED_FIRST_SEGMENTS[platform]?.has(lower[0])) return null;
     if (platform === 'tiktok' && lower.includes('video')) return null;
 
     const host = platform === 'x' ? 'x.com' : url.hostname.toLowerCase();
+
+    // Trim post/video/photo sub-paths down to the profile itself.
+    let path = segments.slice(0, 1);
+    if (platform === 'linkedin') {
+        if (!['company', 'school'].includes(lower[0]) || segments.length < 2) return null;
+        path = segments.slice(0, 2);
+    } else if (platform === 'youtube') {
+        path = segments;
+    } else if (platform === 'facebook' && lower[0] === 'pages') {
+        if (segments.length < 3) return null;
+        path = segments.slice(0, 3);
+    } else if (platform === 'facebook' && lower[0] === 'profile.php') {
+        // Numeric-ID profiles live in the query string; without it the link is dead.
+        const id = url.searchParams.get('id');
+        return id ? `https://${host}/profile.php?id=${encodeURIComponent(id)}` : null;
+    }
+
     return `https://${host}/${path.join('/')}`;
 };
 

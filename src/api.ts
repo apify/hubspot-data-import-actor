@@ -4,7 +4,8 @@ const clientCache = new Map<string, Client>();
 const getClient = (token: string): Client => {
     let client = clientCache.get(token);
     if (!client) {
-        client = new Client({ accessToken: token });
+        // Retries 429/5xx with a delay so the per-company fallback doesn't turn a rate limit into failed rows.
+        client = new Client({ accessToken: token, numberOfApiCallRetries: 3 });
         clientCache.set(token, client);
     }
     return client;

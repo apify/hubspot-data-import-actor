@@ -215,6 +215,35 @@ describe('extractCompanyFields — socials', () => {
         expect(cleanSocialUrl('tiktok', 'https://www.tiktok.com/@acme/video/123')).toBeNull();
     });
 
+    it('trims instagram and x post links to the profile, rejects post-only links', () => {
+        expect(cleanSocialUrl('instagram', 'https://www.instagram.com/acme/reel/123/')).toBe(
+            'https://www.instagram.com/acme',
+        );
+        expect(cleanSocialUrl('instagram', 'https://www.instagram.com/p/abc/')).toBeNull();
+        expect(cleanSocialUrl('instagram', 'https://www.instagram.com/reel/abc/')).toBeNull();
+        const x = cleanSocialUrl('x', 'https://twitter.com/acme/status/1');
+        expect(x).toBe('https://x.com/acme');
+        expect(toXHandle(x!)).toBe('acme');
+        expect(cleanSocialUrl('x', 'https://x.com/i/web/status/1')).toBeNull();
+    });
+
+    it('trims facebook posts/videos, keeps profile.php ids and pages/ paths', () => {
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/acme/posts/123')).toBe(
+            'https://www.facebook.com/acme',
+        );
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/acme/videos/1/')).toBe(
+            'https://www.facebook.com/acme',
+        );
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/profile.php?id=123&ref=x')).toBe(
+            'https://www.facebook.com/profile.php?id=123',
+        );
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/profile.php')).toBeNull();
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/pages/Acme-Inc/123456/')).toBe(
+            'https://www.facebook.com/pages/Acme-Inc/123456',
+        );
+        expect(cleanSocialUrl('facebook', 'https://www.facebook.com/groups/acme')).toBeNull();
+    });
+
     it('strips query, hash and trailing slash and forces https', () => {
         expect(cleanSocialUrl('instagram', 'http://www.instagram.com/acme/?hl=en#top')).toBe(
             'https://www.instagram.com/acme',
