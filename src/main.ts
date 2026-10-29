@@ -10,6 +10,7 @@ import {
     assertVerificationDataPresent,
     deriveCompanyStatus,
 } from './failStates.js';
+import { runCompanyImport } from './company.js';
 
 const STATE_KEY = 'MIGRATION_STATE';
 
@@ -27,6 +28,14 @@ const emptyStats = (rowsTotal = 0, error?: string): ContactImportStats => ({
 });
 
 await Actor.init();
+
+// importMode 'company' has its own self-contained flow; Actor.exit() ends the process
+// so the contacts flow below never runs for it.
+const rawInput = await Actor.getInput<{ importMode?: string }>();
+if (rawInput?.importMode === 'company') {
+    await runCompanyImport(rawInput);
+    await Actor.exit();
+}
 
 const startTime = new Date();
 

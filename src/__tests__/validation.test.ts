@@ -25,8 +25,21 @@ describe('validateInput', () => {
         expect(() => validateInput({ ...validInput, datasetId: '' })).toThrow();
     });
 
-    it('rejects importMode other than "contacts"', () => {
-        expect(() => validateInput({ ...validInput, importMode: 'company' })).toThrow();
+    it('rejects importMode other than "contacts" or "company"', () => {
+        expect(() => validateInput({ ...validInput, importMode: 'companies' })).toThrow();
+        expect(() => validateInput({ ...validInput, importMode: undefined })).toThrow();
+    });
+
+    it('accepts importMode "company" without deduplication', () => {
+        const result = validateInput({
+            hubspotAccessToken: 'pat-na1-abc123',
+            datasetId: 'abc123',
+            importMode: 'company',
+            companyUrlMapping: [{ url: 'https://example.com', companyId: '123' }],
+            dataMappings: [{ source: 'companyLinkedIn', target: 'linkedin_company_page', overwriteMode: 'skip' }],
+        });
+        expect(result.importMode).toBe('company');
+        expect(result.dataMappings[0].overwriteMode).toBe('skip');
     });
 
     it('rejects empty companyUrlMapping', () => {

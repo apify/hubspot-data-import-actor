@@ -1,5 +1,5 @@
 {
-    "title": "Import Apify dataset leads into HubSpot contacts",
+    "title": "Import Apify dataset results into HubSpot",
     "type": "object",
     "schemaVersion": 1,
     "properties": {
@@ -13,20 +13,20 @@
         "datasetId": {
             "title": "Dataset",
             "type": "string",
-            "description": "Apify dataset containing leadsEnrichment[] rows per company.",
+            "description": "Apify dataset to import. 'contacts' mode reads leadsEnrichment[] rows per company; 'company' mode reads Contact Details Scraper items (emails, phones, social profiles) per company website.",
             "resourceType": "dataset"
         },
         "importMode": {
             "title": "Import mode",
-            "description": "Only 'contacts' is supported. Each dataset item's leadsEnrichment[] rows are imported as HubSpot contacts.",
+            "description": "'contacts': each dataset item's leadsEnrichment[] rows are imported as HubSpot contacts associated to the company. 'company': cleaned contact details from the company's website are written onto the HubSpot company record.",
             "type": "string",
             "editor": "select",
-            "enum": ["contacts"],
+            "enum": ["contacts", "company"],
             "default": "contacts"
         },
         "companyUrlMapping": {
             "title": "Company URL to HubSpot ID mapping",
-            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field and leads are associated to the matched company.",
+            "description": "Map company URLs to their HubSpot company IDs. Dataset items are matched via the 'originalStartUrl' field.",
             "type": "array",
             "editor": "schemaBased",
             "items": {
@@ -51,7 +51,7 @@
         },
         "dataMappings": {
             "title": "Field mappings",
-            "description": "Map leadsEnrichment fields to HubSpot contact properties. 'source' must be a leadsEnrichment field name (e.g. 'email', 'firstName'); 'target' is the internal HubSpot contact property name (e.g. 'email', 'firstname').",
+            "description": "Map source fields to HubSpot properties. In 'contacts' mode 'source' is a leadsEnrichment field (e.g. 'email', 'firstName') and 'target' a contact property. In 'company' mode 'source' is one of companyEmail, companyPhone, companyLinkedIn, companyX, companyFacebook, companyInstagram, companyYouTube, companyTikTok and 'target' a company property (companyX → 'twitterhandle' is written as the bare handle).",
             "type": "array",
             "editor": "schemaBased",
             "items": {
@@ -60,13 +60,13 @@
                     "source": {
                         "type": "string",
                         "title": "Source field",
-                        "description": "leadsEnrichment field key (e.g. 'email', 'firstName', 'jobTitle').",
+                        "description": "Source field key: a leadsEnrichment field in 'contacts' mode (e.g. 'email', 'jobTitle'), or a company source in 'company' mode (e.g. 'companyLinkedIn').",
                         "editor": "textfield"
                     },
                     "target": {
                         "type": "string",
                         "title": "HubSpot property",
-                        "description": "Internal name of an existing HubSpot contact property (e.g. 'email', 'firstname').",
+                        "description": "Internal name of an existing HubSpot property: a contact property in 'contacts' mode (e.g. 'firstname'), a company property in 'company' mode (e.g. 'linkedin_company_page').",
                         "editor": "textfield"
                     },
                     "overwriteMode": {
@@ -84,7 +84,7 @@
         },
         "deduplication": {
             "title": "Deduplication key",
-            "description": "Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped.",
+            "description": "Contacts mode only. Existing-contact lookup key. 'email' matches on the HubSpot 'email' property; 'phone' matches on 'phone'. Leads missing the chosen value are skipped.",
             "type": "string",
             "editor": "select",
             "enum": ["email", "phone"],
@@ -92,7 +92,7 @@
         },
         "onlyVerifiedEmails": {
             "title": "Only verified emails",
-            "description": "When enabled, only leads whose emailVerification.result is 'ok' are imported. Requires the enrichment actor to have email verification enabled (verifyLeadsEnrichmentEmails).",
+            "description": "Contacts mode only. When enabled, only leads whose emailVerification.result is 'ok' are imported. Requires the enrichment actor to have email verification enabled (verifyLeadsEnrichmentEmails).",
             "type": "boolean",
             "default": false
         }
@@ -102,7 +102,6 @@
         "datasetId",
         "importMode",
         "companyUrlMapping",
-        "dataMappings",
-        "deduplication"
+        "dataMappings"
     ]
 }
