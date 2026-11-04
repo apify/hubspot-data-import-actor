@@ -119,6 +119,17 @@ const PLATFORM_HOSTS: Record<SocialPlatform, string[]> = {
     tiktok: ['tiktok.com'],
 };
 
+// Every accepted host variant (bare, www., m., country subdomains, fb.com, twitter.com) is rewritten to this one,
+// so one profile always yields one value.
+const CANONICAL_HOST: Record<SocialPlatform, string> = {
+    linkedin: 'www.linkedin.com',
+    x: 'x.com',
+    facebook: 'www.facebook.com',
+    instagram: 'www.instagram.com',
+    youtube: 'www.youtube.com',
+    tiktok: 'www.tiktok.com',
+};
+
 // Path segments that mark a share button / post / video rather than the company profile.
 const REJECTED_SEGMENTS = new Set([
     'share',
@@ -141,7 +152,11 @@ const RESERVED_FIRST_SEGMENTS: Partial<Record<SocialPlatform, Set<string>>> = {
     facebook: new Set(['watch', 'events', 'groups', 'photo.php', 'story.php', 'permalink.php', 'hashtag', 'people']),
 };
 
-/** Returns a canonical profile URL for the platform, or null when the URL isn't a company profile. */
+/**
+ * Returns a canonical profile URL for the platform, or null when the URL isn't a company profile.
+ * The host is normalised to the platform's canonical host, so `linkedin.com`, `www.linkedin.com`,
+ * `m.linkedin.com` and `cz.linkedin.com` links to one profile all give the same value.
+ */
 export const cleanSocialUrl = (platform: SocialPlatform, raw: string): string | null => {
     const url = parseUrl(raw);
     if (!url) return null;
@@ -156,7 +171,7 @@ export const cleanSocialUrl = (platform: SocialPlatform, raw: string): string | 
     if (RESERVED_FIRST_SEGMENTS[platform]?.has(lower[0])) return null;
     if (platform === 'tiktok' && lower.includes('video')) return null;
 
-    const host = platform === 'x' ? 'x.com' : url.hostname.toLowerCase();
+    const host = CANONICAL_HOST[platform];
 
     // Trim post/video/photo sub-paths down to the profile itself.
     let path = segments.slice(0, 1);
@@ -187,7 +202,7 @@ const pickSocial = (platform: SocialPlatform, urls: unknown): string | undefined
 
 /** Bare X/Twitter handle (no `@`) from a profile URL or handle string. */
 export const toXHandle = (value: string): string => {
-    const url = /^(https?:\/\/)?(www\.|mobile\.)?(x|twitter)\.com\//i.test(value.trim()) ? parseUrl(value) : null;
+    const url = /^(https?:\/\/)?([a-z0-9-]+\.)*(x|twitter)\.com\//i.test(value.trim()) ? parseUrl(value) : null;
     const handle = url ? (url.pathname.split('/').filter(Boolean)[0] ?? '') : value.trim();
     return handle.replace(/^@/, '');
 };

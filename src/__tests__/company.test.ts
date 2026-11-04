@@ -264,6 +264,36 @@ describe('extractCompanyFields — socials', () => {
     it('omits fields with no usable value', () => {
         expect(extractCompanyFields(hotjar, 'https://hotjar.com')).toEqual({});
     });
+
+    it('canonicalises the host so subdomain variants give one value', () => {
+        for (const url of [
+            'https://linkedin.com/company/x',
+            'https://www.linkedin.com/company/x',
+            'https://m.linkedin.com/company/x',
+            'https://cz.linkedin.com/company/x',
+        ]) {
+            expect(cleanSocialUrl('linkedin', url)).toBe('https://www.linkedin.com/company/x');
+        }
+        expect(cleanSocialUrl('facebook', 'https://m.facebook.com/acme')).toBe('https://www.facebook.com/acme');
+        expect(cleanSocialUrl('facebook', 'https://fb.com/acme')).toBe('https://www.facebook.com/acme');
+        expect(cleanSocialUrl('facebook', 'https://m.facebook.com/profile.php?id=123')).toBe(
+            'https://www.facebook.com/profile.php?id=123',
+        );
+        expect(cleanSocialUrl('instagram', 'https://instagram.com/acme')).toBe('https://www.instagram.com/acme');
+        expect(cleanSocialUrl('youtube', 'https://m.youtube.com/@acme')).toBe('https://www.youtube.com/@acme');
+        expect(cleanSocialUrl('youtube', 'https://youtube.com/@acme')).toBe('https://www.youtube.com/@acme');
+        expect(cleanSocialUrl('tiktok', 'https://m.tiktok.com/@acme')).toBe('https://www.tiktok.com/@acme');
+        expect(cleanSocialUrl('tiktok', 'https://tiktok.com/@acme')).toBe('https://www.tiktok.com/@acme');
+        expect(cleanSocialUrl('x', 'https://mobile.twitter.com/acme')).toBe('https://x.com/acme');
+    });
+
+    it('writes one LinkedIn value whichever host variant comes first', () => {
+        const fields = extractCompanyFields(
+            { linkedIns: ['https://m.linkedin.com/company/x', 'https://www.linkedin.com/company/x'] },
+            'https://acme.com',
+        );
+        expect(fields.companyLinkedIn).toBe('https://www.linkedin.com/company/x');
+    });
 });
 
 describe('toXHandle', () => {
@@ -271,6 +301,7 @@ describe('toXHandle', () => {
         expect(toXHandle('https://x.com/pipedrive')).toBe('pipedrive');
         expect(toXHandle('https://twitter.com/@acme/status/1')).toBe('acme');
         expect(toXHandle('@acme')).toBe('acme');
+        expect(toXHandle('https://m.twitter.com/acme')).toBe('acme');
     });
 });
 
