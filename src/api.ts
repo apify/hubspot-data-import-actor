@@ -1,4 +1,5 @@
 import { Client } from '@hubspot/api-client';
+import type { ContactImportStats, ContactResult } from './types.js';
 
 const clientCache = new Map<string, Client>();
 const getClient = (token: string): Client => {
@@ -22,6 +23,9 @@ export class HubspotApiError extends Error {
 }
 
 export class HubspotAuthError extends Error {
+    // Set by processCompanyLeads so the caller can persist the company's partial progress.
+    partial?: { stats: ContactImportStats; contacts: ContactResult[] };
+
     constructor(path: string, body: string) {
         super(`HubSpot authentication rejected (401 on ${path}): ${body}`);
         this.name = 'HubspotAuthError';

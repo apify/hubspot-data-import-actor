@@ -1,20 +1,6 @@
 import type { CompanyUrlMapping, ContactImportStats, LeadsEnrichmentRow } from './types.js';
 import { normalizeUrl } from './utils.js';
 
-export const assertDatasetHasLeads = (
-    datasetId: string,
-    totalItems: number,
-    leadsByUrl: Map<string, LeadsEnrichmentRow[]>,
-): void => {
-    let totalLeadRows = 0;
-    for (const leads of leadsByUrl.values()) totalLeadRows += leads.length;
-    if (totalLeadRows === 0) {
-        throw new Error(
-            `Dataset "${datasetId}" has ${totalItems} item(s) but no leadsEnrichment rows. Nothing to import.`,
-        );
-    }
-};
-
 export const assertSomeCompaniesMatch = (
     companyUrlMapping: CompanyUrlMapping[],
     leadsByUrl: Map<string, LeadsEnrichmentRow[]>,
@@ -35,13 +21,17 @@ export const assertVerificationDataPresent = (
     leadsByUrl: Map<string, LeadsEnrichmentRow[]>,
 ): void => {
     if (!onlyVerifiedEmails) return;
+    let anyEmail = false;
     for (const leads of leadsByUrl.values()) {
         if (leads.some((l) => l.emailVerification)) return;
+        if (leads.some((l) => l.email?.trim())) anyEmail = true;
     }
+    // No emails at all means nothing to verify — a no-results run, not a misconfiguration.
+    if (!anyEmail) return;
     throw new Error(
         'onlyVerifiedEmails is enabled but no lead in the dataset carries an emailVerification block. '
         + 'The enrichment run was likely produced with email verification disabled '
-        + '(verifyLeadsEnrichmentEmails), by an older actor build, or no lead had an email. '
+        + '(verifyLeadsEnrichmentEmails) or by an older actor build. '
         + 'Nothing would be imported.',
     );
 };
@@ -49,12 +39,13 @@ export const assertVerificationDataPresent = (
 export const assertSomeWritesSucceeded = (totals: {
     totalCreated: number;
     totalUpdated: number;
+    totalFailed: number;
     anyCompanyHadError: boolean;
 }): void => {
     const zeroWrites = totals.totalCreated + totals.totalUpdated === 0;
-    if (zeroWrites && totals.anyCompanyHadError) {
+    if (zeroWrites && (totals.anyCompanyHadError || totals.totalFailed > 0)) {
         throw new Error(
-            'All lead writes failed. 0 created, 0 updated across all companies. '
+            `All lead writes failed. 0 created, 0 updated, ${totals.totalFailed} failed across all companies. `
             + 'See per-company errors in dataset.',
         );
     }
