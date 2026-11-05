@@ -2,8 +2,8 @@ import { Actor, log } from 'apify';
 import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
 import { validateInput, LeadsEnrichmentRowSchema } from './validation.js';
 import { findDeadSources, normalizeUrl } from './utils.js';
-import { processCompanyLeads } from './contacts.js';
-import { HubspotAuthError } from './api.js';
+import { processCompanyLeads, type ContactObservability } from './contacts.js';
+import { HubspotAuthError, ensureApifyPropertiesExist, ensureLastEnrichedFieldsProperty, getContactPropertyLabels } from './api.js';
 import {
     assertSomeCompaniesMatch,
     assertSomeWritesSucceeded,
@@ -48,10 +48,28 @@ try {
         companyUrlMapping,
         dataMappings,
         deduplication,
+        enrichmentObservability,
         onlyVerifiedEmails,
     } = validateInput(input);
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
+
+    const observability: ContactObservability = {};
+    if (enrichmentObservability) {
+        const { lastEnrichedAtPropertyName, lastEnrichedFieldsPropertyName } = enrichmentObservability;
+        if (await ensureApifyPropertiesExist(hubspotAccessToken, lastEnrichedAtPropertyName)) {
+            observability.lastEnrichedAtPropertyName = lastEnrichedAtPropertyName;
+            log.info(`Enrichment observability enabled: stamping "${lastEnrichedAtPropertyName}" on every contact create/update`);
+        }
+        if (lastEnrichedFieldsPropertyName
+            && await ensureLastEnrichedFieldsProperty(hubspotAccessToken, lastEnrichedFieldsPropertyName)) {
+            observability.lastEnrichedFields = {
+                propertyName: lastEnrichedFieldsPropertyName,
+                labels: await getContactPropertyLabels(hubspotAccessToken),
+            };
+            log.info(`Enrichment observability enabled: listing written fields in "${lastEnrichedFieldsPropertyName}" on every contact create/update`);
+        }
+    }
 
     // Restore state from previous migration if available
     const store = await Actor.openKeyValueStore();
@@ -163,7 +181,7 @@ try {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
                     let processed;
                     try {
-                        processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, onlyVerifiedEmails);
+                        processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, observability, onlyVerifiedEmails);
                     } catch (err) {
                         // Persist the contacts already written for this company before the run fails.
                         if (err instanceof HubspotAuthError && err.partial) {

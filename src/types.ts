@@ -6,6 +6,11 @@ export interface DataMapping {
     overwriteMode: OverwriteMode;
 }
 
+export interface EnrichmentObservability {
+    lastEnrichedAtPropertyName: string;
+    lastEnrichedFieldsPropertyName?: string;
+}
+
 export interface CompanyUrlMapping {
     url?: string;
     companyId: string;
