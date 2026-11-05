@@ -247,6 +247,35 @@ const mergeItems = (a: DatasetItem, b: DatasetItem): DatasetItem => {
     return merged;
 };
 
+export interface CompanyUrlGroup {
+    companyId: string;
+    urls: string[];
+}
+
+/**
+ * Groups companyUrlMapping entries by companyId (first-occurrence order), so a company listed with
+ * several domains is processed once. URLs are trimmed, empty ones dropped, variants deduped by normalizeUrl.
+ */
+export const groupCompanyUrls = (
+    companyUrlMapping: ReadonlyArray<{ url?: string; companyId: string }>,
+): CompanyUrlGroup[] => {
+    const groups = new Map<string, { group: CompanyUrlGroup; seen: Set<string> }>();
+    for (const { url, companyId } of companyUrlMapping) {
+        let entry = groups.get(companyId);
+        if (!entry) {
+            entry = { group: { companyId, urls: [] }, seen: new Set() };
+            groups.set(companyId, entry);
+        }
+        const trimmed = url?.trim();
+        if (!trimmed) continue;
+        const key = normalizeUrl(trimmed);
+        if (entry.seen.has(key)) continue;
+        entry.seen.add(key);
+        entry.group.urls.push(trimmed);
+    }
+    return [...groups.values()].map(({ group }) => group);
+};
+
 // --- Run ---
 
 interface CompanyMigrationState {
@@ -282,7 +311,53 @@ interface PendingWrite {
     properties: Record<string, string>;
 }
 
-/** Skip-mode filter + batch write for one chunk. Only HubspotAuthError escapes. */
+/**
+ * Resolves one company (all its URLs) into a final skip row or a pending write. Fields are extracted per
+ * matched URL (the email rule depends on that URL's domain) and merged: first non-empty value per source.
+ */
+const resolveCompany = (
+    { companyId, urls }: CompanyUrlGroup,
+    itemsByUrl: ReadonlyMap<string, DatasetItem>,
+    mappings: ReadonlyArray<Pick<DataMapping, 'source' | 'target'>>,
+    unmatchedCompanies: string[],
+): CompanyPropertiesResult | PendingWrite => {
+    if (urls.length === 0) return row(companyId, '', 'skipped', { error: 'No company URL provided' });
+
+    const matched: { url: string; item: DatasetItem }[] = [];
+    for (const url of urls) {
+        const item = itemsByUrl.get(normalizeUrl(url));
+        if (item) matched.push({ url, item });
+        else unmatchedCompanies.push(url);
+    }
+    if (matched.length === 0) {
+        return row(companyId, urls[0], 'skipped', { error: 'No matching dataset item found' });
+    }
+
+    const scraped = matched.filter(({ item }) => stringArray(item.scrapedUrls).length > 0);
+    if (scraped.length === 0) {
+        return row(companyId, matched[0].url, 'skipped', { error: 'Website could not be scraped (0 pages)' });
+    }
+
+    const fields: CompanyFields = {};
+    let companyUrl: string | undefined;
+    for (const { url, item } of scraped) {
+        const urlFields = extractCompanyFields(item, url);
+        for (const source of COMPANY_SOURCES) {
+            if (fields[source] || !urlFields[source]) continue;
+            fields[source] = urlFields[source];
+            companyUrl ??= url;
+        }
+    }
+    companyUrl ??= scraped[0].url;
+
+    const properties = buildCompanyProperties(fields, mappings);
+    if (Object.keys(properties).length === 0) {
+        return row(companyId, companyUrl, 'skipped', { error: 'No mappable data found on the website', fields });
+    }
+    return { companyId, companyUrl, fields, properties };
+};
+
+/** Skip-mode filter + batch write for one chunk; pending company ids must be unique. Only HubspotAuthError escapes. */
 const writeChunk = async (
     token: string,
     pending: PendingWrite[],
@@ -351,6 +426,13 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
     const startTime = new Date();
     try {
         const { hubspotAccessToken, datasetId, companyUrlMapping, dataMappings } = validateInput(rawInput);
+        // One entry per HubSpot company: one row, and never the same id twice in a batch call.
+        const companies = groupCompanyUrls(companyUrlMapping);
+        if (companies.length < companyUrlMapping.length) {
+            log.warning(
+                `Merged ${companyUrlMapping.length - companies.length} duplicate companyUrlMapping entries by companyId`,
+            );
+        }
         const mappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
         const unknownSources = mappings.map((m) => m.source).filter((s) => !(COMPANY_SOURCES as readonly string[]).includes(s));
         if (unknownSources.length > 0) {
@@ -370,7 +452,7 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
             await store.setValue(STATE_KEY, { results, processedIndex: startIndex } satisfies CompanyMigrationState);
         });
 
-        log.info(`Starting company import for ${companyUrlMapping.length} companies from dataset ${datasetId}`);
+        log.info(`Starting company import for ${companies.length} companies from dataset ${datasetId}`);
         const dataset = await Actor.openDataset(datasetId);
         const itemsByUrl = new Map<string, DatasetItem>();
         const PAGE_SIZE = 50;
@@ -392,34 +474,15 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
 
         const unmatchedCompanies: string[] = [];
 
-        for (let chunkStart = startIndex; chunkStart < companyUrlMapping.length; chunkStart += COMPANY_BATCH_SIZE) {
-            const chunk = companyUrlMapping.slice(chunkStart, chunkStart + COMPANY_BATCH_SIZE);
+        for (let chunkStart = startIndex; chunkStart < companies.length; chunkStart += COMPANY_BATCH_SIZE) {
+            const chunk = companies.slice(chunkStart, chunkStart + COMPANY_BATCH_SIZE);
             const decided = new Map<string, CompanyPropertiesResult>();
             const pending: PendingWrite[] = [];
 
-            for (const { url, companyId } of chunk) {
-                const companyUrl = url?.trim() ?? '';
-                if (!companyUrl) {
-                    decided.set(companyId, row(companyId, '', 'skipped', { error: 'No company URL provided' }));
-                    continue;
-                }
-                const item = itemsByUrl.get(normalizeUrl(companyUrl));
-                if (!item) {
-                    unmatchedCompanies.push(companyUrl);
-                    decided.set(companyId, row(companyId, companyUrl, 'skipped', { error: 'No matching dataset item found' }));
-                    continue;
-                }
-                if (stringArray(item.scrapedUrls).length === 0) {
-                    decided.set(companyId, row(companyId, companyUrl, 'skipped', { error: 'Website could not be scraped (0 pages)' }));
-                    continue;
-                }
-                const fields = extractCompanyFields(item, companyUrl);
-                const properties = buildCompanyProperties(fields, mappings);
-                if (Object.keys(properties).length === 0) {
-                    decided.set(companyId, row(companyId, companyUrl, 'skipped', { error: 'No mappable data found on the website', fields }));
-                    continue;
-                }
-                pending.push({ companyId, companyUrl, fields, properties });
+            for (const company of chunk) {
+                const resolved = resolveCompany(company, itemsByUrl, mappings, unmatchedCompanies);
+                if ('kind' in resolved) decided.set(company.companyId, resolved);
+                else pending.push(resolved);
             }
 
             const written = await writeChunk(hubspotAccessToken, pending, skipTargets);
@@ -427,12 +490,12 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
             results.push(...chunkRows);
             await Actor.pushData(chunkRows);
             startIndex = chunkStart + chunk.length;
-            log.info(`Processed ${startIndex}/${companyUrlMapping.length} companies`);
+            log.info(`Processed ${startIndex}/${companies.length} companies`);
         }
 
         const endTime = new Date();
         const output: ActorOutput = {
-            totalCompanies: companyUrlMapping.length,
+            totalCompanies: companies.length,
             totalCreated: 0,
             totalUpdated: results.reduce((sum, r) => sum + r.updated, 0),
             totalSkipped: results.reduce((sum, r) => sum + r.skipped, 0),

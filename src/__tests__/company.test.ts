@@ -5,6 +5,7 @@ const actorMock = vi.hoisted(() => ({
     items: [] as Record<string, unknown>[],
     pushed: [] as Record<string, unknown>[],
     failed: undefined as string | undefined,
+    output: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock('apify', () => ({
@@ -20,7 +21,9 @@ vi.mock('apify', () => ({
         pushData: async (rows: Record<string, unknown>[]) => {
             actorMock.pushed.push(...rows);
         },
-        setValue: async () => undefined,
+        setValue: async (key: string, value: Record<string, unknown>) => {
+            if (key === 'OUTPUT') actorMock.output = value;
+        },
         fail: async (msg: string) => {
             actorMock.failed = msg;
         },
@@ -28,8 +31,15 @@ vi.mock('apify', () => ({
 }));
 
 const api = await import('../api.js');
-const { buildCompanyProperties, cleanSocialUrl, extractCompanyFields, pickCompanyEmail, runCompanyImport, toXHandle } =
-    await import('../company.js');
+const {
+    buildCompanyProperties,
+    cleanSocialUrl,
+    extractCompanyFields,
+    groupCompanyUrls,
+    pickCompanyEmail,
+    runCompanyImport,
+    toXHandle,
+} = await import('../company.js');
 
 // Fixtures trimmed from a real Contact Details Scraper run (mergeContacts: true).
 const base = {
@@ -322,6 +332,35 @@ describe('buildCompanyProperties', () => {
     });
 });
 
+describe('groupCompanyUrls', () => {
+    it('groups by companyId in first-occurrence order and dedupes URL variants', () => {
+        expect(
+            groupCompanyUrls([
+                { url: ' https://www.kiwi.com/ ', companyId: '1' },
+                { url: 'kiwi.com', companyId: '1' },
+                { companyId: '2' },
+                { url: '   ', companyId: '2' },
+                { url: 'https://b.com', companyId: '1' },
+            ]),
+        ).toEqual([
+            { companyId: '1', urls: ['https://www.kiwi.com/', 'https://b.com'] },
+            { companyId: '2', urls: [] },
+        ]);
+    });
+
+    it('keeps unique-id input as one group per entry, URLs as given', () => {
+        expect(
+            groupCompanyUrls([
+                { url: 'kiwi.com', companyId: '1' },
+                { url: 'https://hotjar.com', companyId: '2' },
+            ]),
+        ).toEqual([
+            { companyId: '1', urls: ['kiwi.com'] },
+            { companyId: '2', urls: ['https://hotjar.com'] },
+        ]);
+    });
+});
+
 describe('runCompanyImport', () => {
     const MAPPINGS: DataMapping[] = [
         { source: 'companyLinkedIn', target: 'linkedin_company_page', overwriteMode: 'overwrite' },
@@ -344,6 +383,7 @@ describe('runCompanyImport', () => {
         actorMock.items = [kiwi, hotjar, pipedrive, joes, blocked];
         actorMock.pushed = [];
         actorMock.failed = undefined;
+        actorMock.output = undefined;
         batchRead = vi.spyOn(api, 'batchReadCompanies').mockResolvedValue(new Map());
         batchUpdate = vi
             .spyOn(api, 'batchUpdateCompanies')
@@ -445,5 +485,113 @@ describe('runCompanyImport', () => {
     it('fails the actor on invalid input', async () => {
         await runCompanyImport({ ...input([{ url: 'https://kiwi.com', companyId: '1' }]), dataMappings: [] });
         expect(actorMock.failed).toBeDefined();
+    });
+
+    describe('duplicate companyId entries', () => {
+        const acmeCom = {
+            originalStartUrl: 'https://acme.com',
+            scrapedUrls: ['https://acme.com/'],
+            linkedIns: ['https://www.linkedin.com/company/acme'],
+        };
+        const acmeDe = {
+            originalStartUrl: 'https://acme.de',
+            scrapedUrls: ['https://acme.de/'],
+            twitters: ['https://x.com/acme'],
+        };
+        const dupMapping = [
+            { url: 'https://acme.de', companyId: '1' },
+            { url: 'https://acme.com', companyId: '1' },
+        ];
+        const LINKEDIN: DataMapping[] = [
+            { source: 'companyLinkedIn', target: 'linkedin_company_page', overwriteMode: 'overwrite' },
+        ];
+        const LINKEDIN_AND_X: DataMapping[] = [
+            ...LINKEDIN,
+            { source: 'companyX', target: 'twitterhandle', overwriteMode: 'overwrite' },
+        ];
+
+        it('reports an unmatched + matched URL pair as one imported row', async () => {
+            actorMock.items = [acmeCom];
+            await runCompanyImport(input(dupMapping, LINKEDIN));
+            expect(batchUpdate).toHaveBeenCalledTimes(1);
+            expect(batchUpdate.mock.calls[0][1]).toEqual([
+                { id: '1', properties: { linkedin_company_page: 'https://www.linkedin.com/company/acme' } },
+            ]);
+            expect(actorMock.pushed).toHaveLength(1);
+            expect(actorMock.pushed[0]).toMatchObject({
+                companyId: '1',
+                companyUrl: 'https://acme.com',
+                status: 'imported',
+                propertiesWritten: ['linkedin_company_page'],
+            });
+            expect(actorMock.output).toMatchObject({
+                totalUpdated: 1,
+                totalSkipped: 0,
+                totalCompanies: 1,
+                totalRows: 1,
+                unmatchedCompanies: ['https://acme.de'],
+            });
+        });
+
+        it('merges two matched URLs into one batch entry and one row', async () => {
+            actorMock.items = [acmeCom, acmeDe];
+            await runCompanyImport(input(dupMapping, LINKEDIN_AND_X));
+            expect(batchUpdate).toHaveBeenCalledTimes(1);
+            expect(batchUpdate.mock.calls[0][1]).toEqual([
+                {
+                    id: '1',
+                    properties: {
+                        linkedin_company_page: 'https://www.linkedin.com/company/acme',
+                        twitterhandle: 'acme',
+                    },
+                },
+            ]);
+            expect(actorMock.pushed).toHaveLength(1);
+            expect(actorMock.pushed[0]).toMatchObject({ companyId: '1', status: 'imported' });
+            expect(actorMock.pushed[0].propertiesWritten).toEqual(
+                expect.arrayContaining(['linkedin_company_page', 'twitterhandle']),
+            );
+        });
+
+        it('reads skip-mode targets once per company id', async () => {
+            actorMock.items = [acmeCom, acmeDe];
+            await runCompanyImport(input(dupMapping, [{ ...LINKEDIN[0], overwriteMode: 'skip' }]));
+            expect(batchRead).toHaveBeenCalledTimes(1);
+            expect(batchRead.mock.calls[0][1]).toEqual(['1']);
+            expect(batchUpdate.mock.calls[0][1].map((u: { id: string }) => u.id)).toEqual(['1']);
+        });
+
+        it('gives one skipped row when no URL of the company matches', async () => {
+            actorMock.items = [];
+            await runCompanyImport(
+                input(
+                    [
+                        { url: 'https://a.com', companyId: '1' },
+                        { url: 'https://b.com', companyId: '1' },
+                    ],
+                    LINKEDIN,
+                ),
+            );
+            expect(batchUpdate).not.toHaveBeenCalled();
+            expect(actorMock.pushed).toHaveLength(1);
+            expect(actorMock.pushed[0]).toMatchObject({
+                companyId: '1',
+                status: 'skipped',
+                error: 'No matching dataset item found',
+            });
+            expect(actorMock.output?.unmatchedCompanies).toEqual(['https://a.com', 'https://b.com']);
+        });
+
+        it('pushes one row per unique company id with matching totals', async () => {
+            actorMock.items = [acmeCom];
+            await runCompanyImport(input([...dupMapping, { companyId: '2' }], LINKEDIN));
+            expect(actorMock.pushed.map((r) => r.companyId)).toEqual(['1', '2']);
+            expect(actorMock.output).toMatchObject({
+                totalCompanies: 2,
+                totalRows: 2,
+                totalUpdated: 1,
+                totalSkipped: 1,
+            });
+        });
     });
 });
