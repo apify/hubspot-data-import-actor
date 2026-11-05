@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterSkippedProperties, getValueAtPath, mapItemToProperties, normalizeUrl } from '../utils.js';
+import { filterSkippedProperties, findDeadSources, getValueAtPath, mapItemToProperties, normalizeUrl } from '../utils.js';
 
 describe('getValueAtPath', () => {
     it('returns top-level value', () => {
@@ -56,16 +56,66 @@ describe('mapItemToProperties', () => {
         expect(mapItemToProperties(item, mappings)).toEqual({ pc: 'ok' });
     });
 
-    it('serializes objects as JSON', () => {
+    it('joins arrays with semicolons', () => {
         const item = { tags: ['a', 'b'] };
         const mappings = [{ source: 'tags', target: 'tags' }];
-        expect(mapItemToProperties(item, mappings)).toEqual({ tags: '["a","b"]' });
+        expect(mapItemToProperties(item, mappings)).toEqual({ tags: 'a;b' });
+    });
+
+    it('JSON-stringifies object elements inside joined arrays', () => {
+        const item = { items: [{ x: 1 }, { y: 2 }] };
+        const mappings = [{ source: 'items', target: 'items' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ items: '{"x":1};{"y":2}' });
+    });
+
+    it('handles mixed arrays of primitives and objects', () => {
+        const item = { tags: ['a', { b: 1 }, 'c'] };
+        const mappings = [{ source: 'tags', target: 'tags' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ tags: 'a;{"b":1};c' });
+    });
+
+    it('serializes plain objects as JSON', () => {
+        const item = { meta: { x: 1, y: 2 } };
+        const mappings = [{ source: 'meta', target: 'meta' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({ meta: '{"x":1,"y":2}' });
+    });
+
+    it('skips empty arrays instead of writing an empty string', () => {
+        const item = { tags: [] as string[] };
+        const mappings = [{ source: 'tags', target: 'tags' }];
+        expect(mapItemToProperties(item, mappings)).toEqual({});
     });
 
     it('returns empty object when no mappings match', () => {
         const item = { x: 1 };
         const mappings = [{ source: 'missing', target: 'prop' }];
         expect(mapItemToProperties(item, mappings)).toEqual({});
+    });
+});
+
+describe('findDeadSources', () => {
+    it('flags sources that resolve on no row', () => {
+        const leads = [{ email: 'a@x.com' }, { email: 'b@x.com' }];
+        expect(findDeadSources(leads, ['email', 'emial'])).toEqual(['emial']);
+    });
+
+    it('resolves dot-path sources', () => {
+        const leads = [{ meta: { industry: 'Tech' } }];
+        expect(findDeadSources(leads, ['meta.industry'])).toEqual([]);
+    });
+
+    it('treats null and empty arrays as dead, matching the write path', () => {
+        const leads = [{ a: null, b: [] as string[], c: 'ok' }];
+        expect(findDeadSources(leads, ['a', 'b', 'c'])).toEqual(['a', 'b']);
+    });
+
+    it('returns empty when every source resolves on at least one row', () => {
+        const leads = [{ a: 1 }, { b: 2 }];
+        expect(findDeadSources(leads, ['a', 'b'])).toEqual([]);
+    });
+
+    it('flags every source when there are no rows', () => {
+        expect(findDeadSources([], ['a'])).toEqual(['a']);
     });
 });
 

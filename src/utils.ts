@@ -91,6 +91,16 @@ export const getValueAtPath = (obj: DatasetItem, path: string): unknown => {
  * Maps a single dataset item to HubSpot company properties using the provided field mappings.
  * All values are converted to strings since HubSpot handles type coercion internally.
  */
+const serializeValue = (v: unknown): string => (typeof v === 'object' ? JSON.stringify(v) : String(v));
+
+/**
+ * A source value is writable only when mapping it would actually send something to HubSpot.
+ * Empty arrays are excluded: joining them yields '', which would blank an existing
+ * HubSpot property instead of leaving it untouched.
+ */
+const isWritableValue = (v: unknown): boolean =>
+    v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0);
+
 export const mapItemToProperties = (
     item: DatasetItem,
     dataMappings: ReadonlyArray<Pick<DataMapping, 'source' | 'target'>>,
@@ -99,13 +109,27 @@ export const mapItemToProperties = (
 
     for (const mapping of dataMappings) {
         const value = getValueAtPath(item, mapping.source);
-        if (value !== undefined && value !== null) {
-            const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
+        if (isWritableValue(value)) {
+            const raw = Array.isArray(value)
+                ? value.map(serializeValue).join(';')
+                : serializeValue(value);
             properties[mapping.target] = mapping.target === 'country' ? normalizeCountry(raw) : raw;
         }
     }
 
     return properties;
+};
+
+/**
+ * Returns the mapping sources that never resolve to a writable value on any dataset
+ * row. With no source whitelist, a typo'd source is silently skipped on every row —
+ * this keeps that misconfiguration diagnosable.
+ */
+export const findDeadSources = (
+    leads: ReadonlyArray<DatasetItem>,
+    sources: ReadonlyArray<string>,
+): string[] => {
+    return sources.filter((source) => !leads.some((lead) => isWritableValue(getValueAtPath(lead, source))));
 };
 
 const hasValue = (v: unknown): boolean => {

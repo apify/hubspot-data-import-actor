@@ -20,6 +20,7 @@ export interface ContactImportStats {
     created: number;
     updated: number;
     skipped: number;
+    failed: number;
     rowsTotal: number;
     error?: string;
 }
@@ -92,6 +93,7 @@ export interface ActorOutput {
     totalCreated: number;
     totalUpdated: number;
     totalSkipped: number;
+    totalFailed: number;
     totalRows: number;
     unmatchedCompanies: string[];
     results: CompanyResult[];
