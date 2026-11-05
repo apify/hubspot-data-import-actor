@@ -2,8 +2,8 @@ import { Actor, log } from 'apify';
 import type { ActorOutput, CompanyResult, ContactImportStats, ContactResult, LeadsEnrichmentRow } from './types.js';
 import { validateInput, LeadsEnrichmentRowSchema } from './validation.js';
 import { normalizeUrl } from './utils.js';
-import { processCompanyLeads } from './contacts.js';
-import { ensureApifyPropertiesExist } from './api.js';
+import { processCompanyLeads, type ContactObservability } from './contacts.js';
+import { ensureApifyPropertiesExist, ensureLastEnrichedFieldsProperty, getContactPropertyLabels } from './api.js';
 import {
     assertDatasetHasLeads,
     assertSomeCompaniesMatch,
@@ -45,15 +45,20 @@ try {
 
     const cleanedMappings = dataMappings.filter((m) => m.source?.trim() && m.target?.trim());
 
-    let lastEnrichedAtPropertyName: string | undefined;
+    const observability: ContactObservability = {};
     if (enrichmentObservability) {
-        const ensured = await ensureApifyPropertiesExist(
-            hubspotAccessToken,
-            enrichmentObservability.lastEnrichedAtPropertyName,
-        );
-        if (ensured) {
-            lastEnrichedAtPropertyName = enrichmentObservability.lastEnrichedAtPropertyName;
+        const { lastEnrichedAtPropertyName, lastEnrichedFieldsPropertyName } = enrichmentObservability;
+        if (await ensureApifyPropertiesExist(hubspotAccessToken, lastEnrichedAtPropertyName)) {
+            observability.lastEnrichedAtPropertyName = lastEnrichedAtPropertyName;
             log.info(`Enrichment observability enabled: stamping "${lastEnrichedAtPropertyName}" on every contact create/update`);
+        }
+        if (lastEnrichedFieldsPropertyName
+            && await ensureLastEnrichedFieldsProperty(hubspotAccessToken, lastEnrichedFieldsPropertyName)) {
+            observability.lastEnrichedFields = {
+                propertyName: lastEnrichedFieldsPropertyName,
+                labels: await getContactPropertyLabels(hubspotAccessToken),
+            };
+            log.info(`Enrichment observability enabled: listing written fields in "${lastEnrichedFieldsPropertyName}" on every contact create/update`);
         }
     }
 
@@ -151,7 +156,7 @@ try {
                     status = 'imported';
                 } else {
                     log.info(`Processing ${leads.length} lead rows for company ${companyId}...`);
-                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, lastEnrichedAtPropertyName, onlyVerifiedEmails);
+                    const processed = await processCompanyLeads(hubspotAccessToken, companyId, leads, cleanedMappings, deduplication, observability, onlyVerifiedEmails);
                     stats = processed.stats;
                     contacts = processed.contacts;
                     status = deriveCompanyStatus(stats);

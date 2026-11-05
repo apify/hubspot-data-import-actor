@@ -164,14 +164,22 @@ interface ExistingProperty {
     archived?: boolean;
 }
 
+interface ApifyPropertyDefinition {
+    name: string;
+    label: string;
+    type: string;
+    fieldType: string;
+    description: string;
+}
+
 /**
- * A HubSpot `datetime` property is created with `fieldType: 'date'`
- * (see HubSpot's type/fieldType table — `datetime` pairs with `date`, not
- * `datetime`). Sending `fieldType: 'datetime'` is rejected by the API and
- * the property is never created, so observability silently never activates.
+ * An existing property is only reused when it has the expected `type` and is
+ * writable. An incompatible existing property (e.g. a number, a calculated or
+ * archived property) must NOT enable stamping, otherwise the value would be sent
+ * inside a contact write that HubSpot would reject, bricking that contact's enrichment.
  */
-const isCompatibleDatetimeProperty = (existing: ExistingProperty): boolean => (
-    existing.type === 'datetime'
+const isCompatibleProperty = (existing: ExistingProperty, expectedType: string): boolean => (
+    existing.type === expectedType
     && !existing.calculated
     && !existing.archived
 );
@@ -189,67 +197,110 @@ const ensureApifyPropertyGroup = async (client: Client): Promise<void> => {
     }
 };
 
-const ensureStampProperty = async (
+const ensureContactProperty = async (
     client: Client,
-    propertyName: string,
+    definition: ApifyPropertyDefinition,
 ): Promise<boolean> => {
     try {
         await client.crm.properties.coreApi.create('contacts', {
-            name: propertyName,
-            label: 'Last enrichment by Apify',
-            type: 'datetime',
-            fieldType: 'date',
+            ...definition,
             groupName: APIFY_PROPERTY_GROUP_NAME,
-            description: 'Timestamp of the last Apify enrichment run that created or updated this contact.',
         } as never);
         return true;
     } catch (err) {
         if (errorStatus(err) !== 409) throw err;
     }
 
-    // Property already exists (409) — only stamp if it is a writable datetime
-    // property we can safely write an ISO timestamp to. An incompatible existing
-    // property (e.g. a number, a date-only field, a calculated/archived property)
-    // must NOT enable stamping, otherwise the timestamp would be sent inside a
-    // contact write that HubSpot would reject, bricking that contact's enrichment.
+    // Property already exists (409) — only stamp if it is compatible.
     try {
-        const existing = await client.crm.properties.coreApi.getByName('contacts', propertyName) as ExistingProperty;
-        if (isCompatibleDatetimeProperty(existing)) return true;
+        const existing = await client.crm.properties.coreApi.getByName('contacts', definition.name) as ExistingProperty;
+        if (isCompatibleProperty(existing, definition.type)) return true;
         log.warning(
-            `Observability disabled: existing HubSpot property "${propertyName}" `
-            + `is not a writable datetime property `
+            `Observability disabled: existing HubSpot property "${definition.name}" `
+            + `is not a writable ${definition.type} property `
             + `(type="${existing?.type ?? ''}", calculated=${existing?.calculated ?? false}, `
             + `archived=${existing?.archived ?? false}). Stamping skipped to avoid breaking contact writes.`
         );
         return false;
     } catch (lookupErr) {
         log.warning(
-            `Observability disabled: property "${propertyName}" already exists but could not be read back `
+            `Observability disabled: property "${definition.name}" already exists but could not be read back `
             + `to verify compatibility: ${errorBody(lookupErr)}. Stamping skipped.`
         );
         return false;
     }
 };
 
-export const ensureApifyPropertiesExist = async (
+/**
+ * Ensures the "Apify" property group and the given contact property exist.
+ * Never throws — any failure disables stamping of that property for the run.
+ */
+const ensureApifyProperty = async (
     token: string,
-    lastEnrichedAtPropertyName: string,
+    definition: ApifyPropertyDefinition,
 ): Promise<boolean> => {
     const client = getClient(token);
     try {
         await ensureApifyPropertyGroup(client);
-        return await ensureStampProperty(client, lastEnrichedAtPropertyName);
+        return await ensureContactProperty(client, definition);
     } catch (err) {
         if (errorStatus(err) === 403) {
             log.warning(
                 `Observability disabled: token lacks 'crm.schemas.contacts.write' scope. `
-                + `Property "${lastEnrichedAtPropertyName}" will not be created or stamped.`
+                + `Property "${definition.name}" will not be created or stamped.`
             );
         } else {
             log.warning(
-                `Could not ensure observability property "${lastEnrichedAtPropertyName}": ${errorBody(err)}`
+                `Could not ensure observability property "${definition.name}": ${errorBody(err)}`
             );
         }
         return false;
+    }
+};
+
+/**
+ * A HubSpot `datetime` property is created with `fieldType: 'date'`
+ * (see HubSpot's type/fieldType table — `datetime` pairs with `date`, not
+ * `datetime`). Sending `fieldType: 'datetime'` is rejected by the API and
+ * the property is never created, so observability silently never activates.
+ */
+export const ensureApifyPropertiesExist = async (
+    token: string,
+    lastEnrichedAtPropertyName: string,
+): Promise<boolean> => ensureApifyProperty(token, {
+    name: lastEnrichedAtPropertyName,
+    label: 'Last enrichment by Apify',
+    type: 'datetime',
+    fieldType: 'date',
+    description: 'Timestamp of the last Apify enrichment run that created or updated this contact.',
+});
+
+export const ensureLastEnrichedFieldsProperty = async (
+    token: string,
+    lastEnrichedFieldsPropertyName: string,
+): Promise<boolean> => ensureApifyProperty(token, {
+    name: lastEnrichedFieldsPropertyName,
+    label: 'Fields updated by Apify',
+    type: 'string',
+    fieldType: 'textarea',
+    description: 'Labels of the contact properties the last Apify enrichment run wrote on create or update.',
+});
+
+/**
+ * Maps contact property internal names to their labels. Never throws — on
+ * failure it returns an empty map and callers fall back to internal names.
+ */
+export const getContactPropertyLabels = async (token: string): Promise<Record<string, string>> => {
+    const client = getClient(token);
+    try {
+        const response = await client.crm.properties.coreApi.getAll('contacts');
+        return Object.fromEntries(
+            (response.results ?? [])
+                .filter((p) => p.name && p.label)
+                .map((p) => [p.name, p.label]),
+        );
+    } catch (err) {
+        log.warning(`Could not read contact property labels, falling back to internal names: ${errorBody(err)}`);
+        return {};
     }
 };

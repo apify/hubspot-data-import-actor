@@ -18,6 +18,15 @@ import {
 
 export type DeduplicationKey = 'email' | 'phone';
 
+export interface ContactObservability {
+    lastEnrichedAtPropertyName?: string;
+    lastEnrichedFields?: {
+        propertyName: string;
+        /** Property internal name → label; names missing here are listed as-is. */
+        labels: Record<string, string>;
+    };
+}
+
 export interface ProcessCompanyLeadsResult {
     stats: ContactImportStats;
     contacts: ContactResult[];
@@ -32,13 +41,30 @@ const buildDisplayName = (lead: LeadsEnrichmentRow): string => {
         .join(' ');
 };
 
+// Adds the observability stamps to the properties of a contact write. The fields
+// list is built before stamping, so it never names the Apify properties themselves.
+const withObservabilityStamps = (
+    properties: Record<string, string>,
+    observability: ContactObservability,
+): Record<string, string> => {
+    const stamped = { ...properties };
+    if (observability.lastEnrichedFields) {
+        const { propertyName, labels } = observability.lastEnrichedFields;
+        stamped[propertyName] = Object.keys(properties).map((name) => labels[name] ?? name).join(', ');
+    }
+    if (observability.lastEnrichedAtPropertyName) {
+        stamped[observability.lastEnrichedAtPropertyName] = new Date().toISOString();
+    }
+    return stamped;
+};
+
 export const processCompanyLeads = async (
     token: string,
     companyId: string,
     leadsEnrichment: LeadsEnrichmentRow[],
     dataMappings: DataMapping[],
     deduplication: DeduplicationKey,
-    lastEnrichedAtPropertyName?: string,
+    observability: ContactObservability = {},
     onlyVerifiedEmails = false,
 ): Promise<ProcessCompanyLeadsResult> => {
     const stats: ContactImportStats = {
@@ -114,23 +140,19 @@ export const processCompanyLeads = async (
                     contactId = existing.id;
                     writeStatus = 'skipped_already_complete';
                 } else {
-                    if (lastEnrichedAtPropertyName) {
-                        filtered[lastEnrichedAtPropertyName] = new Date().toISOString();
-                    }
-                    await updateContact(token, existing.id, filtered);
+                    const payload = withObservabilityStamps(filtered, observability);
+                    await updateContact(token, existing.id, payload);
                     contactId = existing.id;
                     stats.updated++;
                     writeStatus = 'updated';
-                    writtenKeys = Object.keys(filtered);
+                    writtenKeys = Object.keys(payload);
                 }
             } else {
-                if (lastEnrichedAtPropertyName) {
-                    properties[lastEnrichedAtPropertyName] = new Date().toISOString();
-                }
-                contactId = await createContact(token, properties);
+                const payload = withObservabilityStamps(properties, observability);
+                contactId = await createContact(token, payload);
                 stats.created++;
                 writeStatus = 'created';
-                writtenKeys = Object.keys(properties);
+                writtenKeys = Object.keys(payload);
             }
         } catch (err) {
             if (err instanceof HubspotAuthError) throw err;

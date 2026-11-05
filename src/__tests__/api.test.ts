@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ensureApifyPropertiesExist } from '../api.js';
+import { ensureApifyPropertiesExist, ensureLastEnrichedFieldsProperty, getContactPropertyLabels } from '../api.js';
 
 const mocks = vi.hoisted(() => ({
-    coreApi: { create: vi.fn(), getByName: vi.fn() },
+    coreApi: { create: vi.fn(), getByName: vi.fn(), getAll: vi.fn() },
     groupsApi: { create: vi.fn() },
     log: { warning: vi.fn(), info: vi.fn() },
 }));
@@ -165,5 +165,68 @@ describe('ensureApifyPropertiesExist', () => {
             expect(result).toBe(false);
             expect(mocks.log.warning).toHaveBeenCalled();
         });
+    });
+});
+describe('ensureLastEnrichedFieldsProperty', () => {
+    const FIELDS = 'apify_last_enriched_fields';
+
+    beforeEach(() => {
+        mocks.coreApi.create.mockReset();
+        mocks.coreApi.create.mockResolvedValue(undefined);
+        mocks.coreApi.getByName.mockReset();
+        mocks.groupsApi.create.mockReset();
+        mocks.groupsApi.create.mockResolvedValue(undefined);
+        mocks.log.warning.mockReset();
+    });
+
+    it('creates a string/textarea property in the Apify group', async () => {
+        const result = await ensureLastEnrichedFieldsProperty('tok', FIELDS);
+        expect(result).toBe(true);
+        expect(mocks.coreApi.create).toHaveBeenCalledWith('contacts', expect.objectContaining({
+            name: FIELDS,
+            type: 'string',
+            fieldType: 'textarea',
+            groupName: 'apify',
+        }));
+    });
+
+    it('reuses an existing writable string property', async () => {
+        mocks.coreApi.create.mockRejectedValueOnce(conflict());
+        mocks.coreApi.getByName.mockResolvedValueOnce({ type: 'string', fieldType: 'text', calculated: false, archived: false });
+        expect(await ensureLastEnrichedFieldsProperty('tok', FIELDS)).toBe(true);
+    });
+
+    it('disables the fields list when the existing property is not a string', async () => {
+        mocks.coreApi.create.mockRejectedValueOnce(conflict());
+        mocks.coreApi.getByName.mockResolvedValueOnce({ type: 'datetime', fieldType: 'date', calculated: false, archived: false });
+        expect(await ensureLastEnrichedFieldsProperty('tok', FIELDS)).toBe(false);
+        expect(mocks.log.warning).toHaveBeenCalled();
+    });
+
+    it('returns false on 403 (missing schema scope)', async () => {
+        mocks.coreApi.create.mockRejectedValueOnce(forbidden());
+        expect(await ensureLastEnrichedFieldsProperty('tok', FIELDS)).toBe(false);
+        expect(mocks.log.warning).toHaveBeenCalledWith(expect.stringContaining('crm.schemas.contacts.write'));
+    });
+});
+
+describe('getContactPropertyLabels', () => {
+    beforeEach(() => {
+        mocks.coreApi.getAll.mockReset();
+        mocks.log.warning.mockReset();
+    });
+
+    it('maps internal names to labels', async () => {
+        mocks.coreApi.getAll.mockResolvedValueOnce({
+            results: [{ name: 'firstname', label: 'First Name' }, { name: 'jobtitle', label: 'Job Title' }],
+        });
+        expect(await getContactPropertyLabels('tok')).toEqual({ firstname: 'First Name', jobtitle: 'Job Title' });
+        expect(mocks.coreApi.getAll).toHaveBeenCalledWith('contacts');
+    });
+
+    it('returns an empty map and warns when the lookup fails', async () => {
+        mocks.coreApi.getAll.mockRejectedValueOnce(serverError());
+        expect(await getContactPropertyLabels('tok')).toEqual({});
+        expect(mocks.log.warning).toHaveBeenCalled();
     });
 });

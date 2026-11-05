@@ -62,6 +62,7 @@ const DataMappingSchema = z.object({
 
 const EnrichmentObservabilitySchema = z.object({
     lastEnrichedAtPropertyName: nonEmptyString.describe('Internal name of the HubSpot contact datetime property to stamp with the current timestamp on every create/update'),
+    lastEnrichedFieldsPropertyName: nonEmptyString.optional().describe('Internal name of the HubSpot contact text property to set to the labels of the properties written on every create/update'),
 });
 
 export const ActorInputSchema = z.object({

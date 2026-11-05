@@ -8,6 +8,7 @@ export interface DataMapping {
 
 export interface EnrichmentObservability {
     lastEnrichedAtPropertyName: string;
+    lastEnrichedFieldsPropertyName?: string;
 }
 
 export interface CompanyUrlMapping {

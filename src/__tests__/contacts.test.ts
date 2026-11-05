@@ -348,7 +348,7 @@ describe('processCompanyLeads', () => {
             searchByEmail.mockResolvedValueOnce(null);
             create.mockResolvedValueOnce('c-new');
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
-            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(stats.created).toBe(1);
             expect(create).toHaveBeenCalledWith('tok', expect.objectContaining({ [STAMP]: FIXED_ISO }));
         });
@@ -356,7 +356,7 @@ describe('processCompanyLeads', () => {
         it('stamps the property on update with the current timestamp', async () => {
             searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: {} });
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
-            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(stats.updated).toBe(1);
             expect(update).toHaveBeenCalledWith('tok', 'c-123', expect.objectContaining({ [STAMP]: FIXED_ISO }));
         });
@@ -379,14 +379,14 @@ describe('processCompanyLeads', () => {
                 properties: { email: 'a@b.com', firstname: 'Existing' },
             });
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
-            const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email', STAMP);
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
             expect(update).not.toHaveBeenCalled();
         });
 
         it('does not stamp when the dedup identifier is missing (no contact write)', async () => {
             const leads: LeadsEnrichmentRow[] = [{ firstName: 'No', lastName: 'Email' }];
-            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { stats } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, rowsTotal: 1 });
             expect(create).not.toHaveBeenCalled();
             expect(update).not.toHaveBeenCalled();
@@ -396,7 +396,7 @@ describe('processCompanyLeads', () => {
             searchByEmail.mockResolvedValueOnce(null);
             create.mockResolvedValueOnce('c-new');
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
-            const { contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(contacts[0].propertiesWritten).toEqual(
                 expect.arrayContaining([STAMP, 'email', 'firstname']),
             );
@@ -405,7 +405,7 @@ describe('processCompanyLeads', () => {
         it('includes the stamp in propertiesWritten on a stamped update', async () => {
             searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: {} });
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
-            const { contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(contacts[0].propertiesWritten).toEqual(
                 expect.arrayContaining([STAMP, 'email', 'firstname']),
             );
@@ -415,10 +415,56 @@ describe('processCompanyLeads', () => {
             searchByEmail.mockResolvedValueOnce(null);
             create.mockRejectedValueOnce(new HubspotApiError(500, 'boom', '/contacts'));
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'A' }];
-            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', STAMP);
+            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
             expect(stats.skipped).toBe(1);
             expect(stats.error).toContain('500');
             expect(contacts[0]).toMatchObject({ status: 'failed', propertiesWritten: [] });
+        });
+    });
+
+    describe('enrichment observability fields list', () => {
+        const STAMP = 'apify_last_enriched_at';
+        const FIELDS = 'apify_last_enriched_fields';
+        const LABELS = { email: 'Email', firstname: 'First Name', lastname: 'Last Name' };
+        const observability = {
+            lastEnrichedAtPropertyName: STAMP,
+            lastEnrichedFields: { propertyName: FIELDS, labels: LABELS },
+        };
+
+        it('lists the labels of every property written on creation', async () => {
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane', lastName: 'Doe' }];
+            await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', observability);
+            expect(create.mock.calls[0][1][FIELDS]).toBe('Email, First Name, Last Name');
+        });
+
+        it('lists only the properties actually written on update', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+                { source: 'firstName', target: 'firstname', overwriteMode: 'skip' },
+                { source: 'lastName', target: 'lastname', overwriteMode: 'overwrite' },
+            ];
+            searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: { firstname: 'Existing' } });
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane', lastName: 'Doe' }];
+            await processCompanyLeads('tok', 'c1', leads, mappings, 'email', observability);
+            expect(update.mock.calls[0][2][FIELDS]).toBe('Email, Last Name');
+        });
+
+        it('falls back to the internal name when a label is unknown', async () => {
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', jobTitle: 'CTO' }];
+            await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', observability);
+            expect(create.mock.calls[0][1][FIELDS]).toBe('Email, jobtitle');
+        });
+
+        it('never lists the Apify properties themselves', async () => {
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
+            await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', observability);
+            expect(create.mock.calls[0][1][FIELDS]).toBe('Email');
+        });
+
+        it('does not set the fields list when only the timestamp is enabled', async () => {
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
+            await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', { lastEnrichedAtPropertyName: STAMP });
+            expect(create.mock.calls[0][1]).not.toHaveProperty(FIELDS);
         });
     });
 
