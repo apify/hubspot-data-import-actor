@@ -296,6 +296,7 @@ const row = (
     created: 0,
     updated: status === 'imported' ? 1 : 0,
     skipped: status === 'skipped' ? 1 : 0,
+    failed: status === 'failed' ? 1 : 0,
     rowsTotal: 1,
     ...(extra.error ? { error: extra.error } : {}),
     propertiesWritten: extra.propertiesWritten ?? [],
@@ -499,6 +500,7 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
             totalCreated: 0,
             totalUpdated: results.reduce((sum, r) => sum + r.updated, 0),
             totalSkipped: results.reduce((sum, r) => sum + r.skipped, 0),
+            totalFailed: results.reduce((sum, r) => sum + r.failed, 0),
             totalRows: results.length,
             unmatchedCompanies,
             results,
@@ -514,7 +516,7 @@ export const runCompanyImport = async (rawInput: unknown): Promise<void> => {
             totalCompanies: output.totalCompanies,
             totalUpdated: output.totalUpdated,
             totalSkipped: output.totalSkipped,
-            totalFailed: results.filter((r) => r.status === 'failed').length,
+            totalFailed: output.totalFailed,
             duration: output.duration,
         });
     } catch (err) {
