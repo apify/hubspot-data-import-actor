@@ -128,8 +128,11 @@ export const processCompanyLeads = async (
         }
 
         const properties = mapItemToProperties(lead as Record<string, unknown>, dataMappings);
-        if (deduplication === 'email' && !properties.email) properties.email = dedupValue;
-        if (deduplication === 'phone' && !properties.phone) properties.phone = dedupValue;
+        // The dedup key is added when it isn't mapped, so a new contact can be found next time.
+        // An existing contact was matched on it, so it is left out of the update.
+        const dedupProperty = deduplication === 'email' ? 'email' : 'phone';
+        const dedupAutoAdded = !properties[dedupProperty];
+        if (dedupAutoAdded) properties[dedupProperty] = dedupValue;
 
         let contactId: string;
         let writeStatus: 'created' | 'updated' | 'skipped_already_complete';
@@ -140,6 +143,7 @@ export const processCompanyLeads = async (
                 : await searchContactByPhone(token, dedupValue, skipTargets);
             if (existing) {
                 const filtered = filterSkippedProperties(properties, existing.properties, skipTargets);
+                if (dedupAutoAdded) delete filtered[dedupProperty];
                 if (Object.keys(filtered).length === 0) {
                     log.info(`Contact ${existing.id}: all mapped fields already populated, skipping update`);
                     stats.skipped++;

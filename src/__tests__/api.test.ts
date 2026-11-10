@@ -126,6 +126,17 @@ describe('ensureApifyPropertiesExist', () => {
             expect(mocks.log.warning).toHaveBeenCalled();
         });
 
+        it('disables stamping when the existing property is read-only', async () => {
+            mocks.coreApi.create.mockRejectedValueOnce(conflict());
+            mocks.coreApi.getByName.mockResolvedValueOnce({
+                type: 'datetime', fieldType: 'date', calculated: false, archived: false,
+                modificationMetadata: { readOnlyValue: true },
+            });
+            const result = await ensureApifyPropertiesExist('tok', STAMP);
+            expect(result).toBe(false);
+            expect(mocks.log.warning).toHaveBeenCalled();
+        });
+
         it('disables stamping when the existing property cannot be read back', async () => {
             mocks.coreApi.create.mockRejectedValueOnce(conflict());
             mocks.coreApi.getByName.mockRejectedValueOnce(serverError());

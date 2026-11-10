@@ -227,6 +227,7 @@ interface ExistingProperty {
     fieldType?: string;
     calculated?: boolean;
     archived?: boolean;
+    modificationMetadata?: { readOnlyValue?: boolean };
 }
 
 interface ApifyPropertyDefinition {
@@ -239,14 +240,15 @@ interface ApifyPropertyDefinition {
 
 /**
  * An existing property is only reused when it has the expected `type` and is
- * writable. An incompatible existing property (e.g. a number, a calculated or
- * archived property) must NOT enable stamping, otherwise the value would be sent
+ * writable. An incompatible existing property (e.g. a number, a calculated,
+ * archived or read-only property) must NOT enable stamping, otherwise the value would be sent
  * inside a contact write that HubSpot would reject, bricking that contact's enrichment.
  */
 const isCompatibleProperty = (existing: ExistingProperty, expectedType: string): boolean => (
     existing.type === expectedType
     && !existing.calculated
     && !existing.archived
+    && !existing.modificationMetadata?.readOnlyValue
 );
 
 const ensureApifyPropertyGroup = async (client: Client): Promise<void> => {
@@ -284,7 +286,8 @@ const ensureContactProperty = async (
             `Observability disabled: existing HubSpot property "${definition.name}" `
             + `is not a writable ${definition.type} property `
             + `(type="${existing?.type ?? ''}", calculated=${existing?.calculated ?? false}, `
-            + `archived=${existing?.archived ?? false}). Stamping skipped to avoid breaking contact writes.`
+            + `archived=${existing?.archived ?? false}, `
+            + `readOnly=${existing?.modificationMetadata?.readOnlyValue ?? false}). Stamping skipped to avoid breaking contact writes.`
         );
         return false;
     } catch (lookupErr) {

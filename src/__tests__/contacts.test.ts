@@ -134,6 +134,27 @@ describe('processCompanyLeads', () => {
     });
 
     describe('per-mapping overwrite/skip', () => {
+        it('skips the update when only the auto-added dedup key would be written', async () => {
+            const mappings: DataMapping[] = [{ source: 'firstName', target: 'firstname', overwriteMode: 'skip' }];
+            searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: { firstname: 'Existing' } });
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
+            const { stats, contacts } = await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(stats).toEqual({ created: 0, updated: 0, skipped: 1, failed: 0, rowsTotal: 1 });
+            expect(update).not.toHaveBeenCalled();
+            expect(contacts[0]).toMatchObject({ status: 'skipped_already_complete', propertiesWritten: [] });
+        });
+
+        it('still writes an explicitly mapped dedup field on update', async () => {
+            const mappings: DataMapping[] = [
+                { source: 'email', target: 'email', overwriteMode: 'overwrite' },
+                { source: 'firstName', target: 'firstname', overwriteMode: 'overwrite' },
+            ];
+            searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: {} });
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', firstName: 'Jane' }];
+            await processCompanyLeads('tok', 'c1', leads, mappings, 'email');
+            expect(update).toHaveBeenCalledWith('tok', 'c-123', { email: 'a@b.com', firstname: 'Jane' });
+        });
+
         it('omits a skipped field when the existing contact has a non-empty value for it', async () => {
             const mappings: DataMapping[] = [
                 { source: 'email', target: 'email', overwriteMode: 'overwrite' },
@@ -224,6 +245,14 @@ describe('processCompanyLeads', () => {
             expect(searchByPhone).toHaveBeenCalledWith('tok', '+15551234567', []);
             expect(create).toHaveBeenCalledWith('tok', { phone: '+15551234567', firstname: 'Jane' });
             expect(associate).toHaveBeenCalledWith('tok', 'c-phone-new', 'c1');
+        });
+
+        it('leaves an auto-added phone out of the update payload', async () => {
+            const mappings: DataMapping[] = [{ source: 'firstName', target: 'firstname', overwriteMode: 'overwrite' }];
+            searchByPhone.mockResolvedValueOnce({ id: 'c-phone-existing', properties: {} });
+            const leads: LeadsEnrichmentRow[] = [{ mobileNumber: '+15551234567', firstName: 'Jane' }];
+            await processCompanyLeads('tok', 'c1', leads, mappings, 'phone');
+            expect(update).toHaveBeenCalledWith('tok', 'c-phone-existing', { firstname: 'Jane' });
         });
 
         it('searches by phone and updates on match', async () => {
@@ -480,6 +509,26 @@ describe('processCompanyLeads', () => {
             const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com' }];
             await processCompanyLeads('tok', 'c1', leads, DEFAULT_MAPPINGS, 'email', observability);
             expect(create.mock.calls[0][1][FIELDS]).toBe('Email');
+        });
+
+        it('does not write or list an auto-added dedup key on update', async () => {
+            const mappings: DataMapping[] = [{ source: 'jobTitle', target: 'jobtitle', overwriteMode: 'overwrite' }];
+            const labels = { ...LABELS, jobtitle: 'Job Title' };
+            searchByEmail.mockResolvedValueOnce({ id: 'c-123', properties: {} });
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', jobTitle: 'CTO' }];
+            await processCompanyLeads('tok', 'c1', leads, mappings, 'email', {
+                lastEnrichedFields: { propertyName: FIELDS, labels },
+            });
+            expect(update.mock.calls[0][2]).not.toHaveProperty('email');
+            expect(update.mock.calls[0][2][FIELDS]).toBe('Job Title');
+        });
+
+        it('still writes and lists an auto-added dedup key on create', async () => {
+            const mappings: DataMapping[] = [{ source: 'jobTitle', target: 'jobtitle', overwriteMode: 'overwrite' }];
+            const leads: LeadsEnrichmentRow[] = [{ email: 'a@b.com', jobTitle: 'CTO' }];
+            await processCompanyLeads('tok', 'c1', leads, mappings, 'email', observability);
+            expect(create.mock.calls[0][1]).toMatchObject({ email: 'a@b.com', jobtitle: 'CTO' });
+            expect(create.mock.calls[0][1][FIELDS]).toBe('jobtitle, Email');
         });
 
         it('does not set the fields list when only the timestamp is enabled', async () => {
